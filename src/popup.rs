@@ -328,6 +328,9 @@ struct PopupApp {
     scroll_to_selected_once: bool,
     config: Config,
     preview_image: Option<(String, egui::TextureHandle)>,
+    lightbox_zoom: f32,
+    lightbox_pan: egui::Vec2,
+    focused_once: bool,
 }
 
 impl PopupApp {
@@ -353,6 +356,9 @@ impl PopupApp {
             scroll_to_selected_once: false,
             config,
             preview_image: None,
+            lightbox_zoom: 1.0,
+            lightbox_pan: egui::Vec2::ZERO,
+            focused_once: false,
         }
     }
 
@@ -713,6 +719,8 @@ impl PopupApp {
             if let ClipItem::Image { filename, .. } = &item {
                 if !filename.is_empty() {
                     if let Some(tex) = self.load_large_image(ui.ctx(), filename) {
+                        self.lightbox_zoom = 1.0;
+                        self.lightbox_pan = egui::Vec2::ZERO;
                         self.preview_image = Some((filename.clone(), tex));
                     }
                 }
@@ -917,12 +925,13 @@ impl PopupApp {
         if let Some(texture) = texture {
             let mut close_preview = false;
             let ctx = ui.ctx();
+
             egui::Area::new(egui::Id::new("lightbox_overlay"))
                 .order(egui::Order::Foreground)
                 .fixed_pos(egui::pos2(0.0, 0.0))
                 .show(ctx, |ui| {
                     let screen_rect = ctx.screen_rect();
-                    let response = ui.allocate_rect(screen_rect, egui::Sense::click());
+                    let backdrop_response = ui.allocate_rect(screen_rect, egui::Sense::click());
                     
                     // Dim background
                     let bg_color = egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220);
@@ -932,11 +941,7 @@ impl PopupApp {
                         bg_color
                     );
 
-                    if response.clicked() {
-                        close_preview = true;
-                    }
-
-                    // Calculate preview image size (fits screen with padding, max 500x500)
+                    // Calculate original preview size (fits screen with padding, max 500x500)
                     let max_img_size = egui::vec2(
                         screen_rect.width() - 80.0,
                         screen_rect.height() - 100.0,
@@ -948,13 +953,39 @@ impl PopupApp {
                         .min(1.0);
                     let scaled_size = img_size * scale;
                     
-                    let image_rect = egui::Rect::from_center_size(screen_rect.center(), scaled_size);
+                    // Apply zoom and pan to get final image rect
+                    let current_size = scaled_size * self.lightbox_zoom;
+                    let current_center = screen_rect.center() + self.lightbox_pan;
+                    let image_rect = egui::Rect::from_center_size(current_center, current_size);
                     
+                    // Draw image
                     let img = egui::Image::new(&texture)
+                        .fit_to_exact_size(current_size)
                         .rounding(egui::Rounding::same(8.0));
                     ui.put(image_rect, img);
 
-                    // Close button at top-right
+                    // Interact with image for panning/double-clicking
+                    let image_response = ui.interact(image_rect, egui::Id::new("lightbox_image_interact"), egui::Sense::click_and_drag());
+                    
+                    if image_response.dragged() {
+                        self.lightbox_pan += image_response.drag_delta();
+                    }
+                    
+                    if image_response.double_clicked() {
+                        self.lightbox_zoom = 1.0;
+                        self.lightbox_pan = egui::Vec2::ZERO;
+                    }
+
+                    // Backdrop click closes the preview only if click is outside the image rect
+                    if backdrop_response.clicked() {
+                        if let Some(hover_pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                            if !image_rect.contains(hover_pos) {
+                                close_preview = true;
+                            }
+                        }
+                    }
+
+                    // Close button at top-right of the screen
                     let btn_size = egui::vec2(28.0, 28.0);
                     let close_btn_pos = egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
                     let close_rect = egui::Rect::from_center_size(close_btn_pos, btn_size);
@@ -975,6 +1006,82 @@ impl PopupApp {
                     if close_response.clicked() {
                         close_preview = true;
                     }
+
+                    // Control bar panel at the bottom center of the screen
+                    let control_bar_rect = egui::Rect::from_center_size(
+                        egui::pos2(screen_rect.center().x, screen_rect.bottom() - 50.0),
+                        egui::vec2(160.0, 36.0)
+                    );
+                    
+                    let control_bg = if self.config.general.enable_theming {
+                        egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200) // slate-800
+                    } else {
+                        ui.visuals().widgets.inactive.bg_fill
+                    };
+                    
+                    ui.painter().rect(
+                        control_bar_rect,
+                        egui::Rounding::same(18.0),
+                        control_bg,
+                        egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+                    );
+                    
+                    ui.allocate_ui_at_rect(control_bar_rect, |ui| {
+                        ui.horizontal_centered(|ui| {
+                            ui.add_space(20.0);
+                            
+                            // Zoom Out (-)
+                            let (minus_rect, minus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                            let minus_color = if minus_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+                            let minus_stroke = egui::Stroke::new(2.0, minus_color);
+                            ui.painter().line_segment(
+                                [egui::pos2(minus_rect.left() + 6.0, minus_rect.center().y), egui::pos2(minus_rect.right() - 6.0, minus_rect.center().y)],
+                                minus_stroke
+                            );
+                            if minus_resp.clicked() {
+                                self.lightbox_zoom = (self.lightbox_zoom / 1.2).clamp(0.2, 10.0);
+                                ctx.request_repaint();
+                            }
+                            
+                            ui.add_space(6.0);
+                            
+                            // Zoom percentage / Reset
+                            let percent_text = format!("{}%", (self.lightbox_zoom * 100.0).round() as i32);
+                            let (lbl_rect, lbl_resp) = ui.allocate_exact_size(egui::vec2(60.0, 24.0), egui::Sense::click());
+                            let text_color = if lbl_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+                            ui.painter().text(
+                                lbl_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                percent_text,
+                                egui::FontId::proportional(14.0),
+                                text_color
+                            );
+                            if lbl_resp.clicked() {
+                                self.lightbox_zoom = 1.0;
+                                self.lightbox_pan = egui::Vec2::ZERO;
+                                ctx.request_repaint();
+                            }
+                            
+                            ui.add_space(6.0);
+                            
+                            // Zoom In (+)
+                            let (plus_rect, plus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                            let plus_color = if plus_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
+                            let plus_stroke = egui::Stroke::new(2.0, plus_color);
+                            ui.painter().line_segment(
+                                [egui::pos2(plus_rect.left() + 6.0, plus_rect.center().y), egui::pos2(plus_rect.right() - 6.0, plus_rect.center().y)],
+                                plus_stroke
+                            );
+                            ui.painter().line_segment(
+                                [egui::pos2(plus_rect.center().x, plus_rect.top() + 6.0), egui::pos2(plus_rect.center().x, plus_rect.bottom() - 6.0)],
+                                plus_stroke
+                            );
+                            if plus_resp.clicked() {
+                                self.lightbox_zoom = (self.lightbox_zoom * 1.2).clamp(0.2, 10.0);
+                                ctx.request_repaint();
+                            }
+                        });
+                    });
                 });
 
             if close_preview {
@@ -987,6 +1094,17 @@ impl PopupApp {
 impl eframe::App for PopupApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.load_textures(ctx);
+
+        if self.config.general.close_on_focus_out {
+            let focused = ctx.input(|i| i.focused);
+            if focused {
+                self.focused_once = true;
+            }
+            if self.focused_once && !focused {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return;
+            }
+        }
 
         let close = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         let down = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));

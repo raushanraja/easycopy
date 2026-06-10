@@ -15,6 +15,7 @@ fn default_hide_main_header() -> bool { false }
 fn default_hide_secondary_header() -> bool { false }
 fn default_enable_theming() -> bool { true }
 fn default_enable_clipping() -> bool { true }
+fn default_close_on_focus_out() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -34,6 +35,7 @@ pub struct GeneralConfig {
     pub hide_secondary_header: bool,
     pub enable_theming: bool,
     pub enable_clipping: bool,
+    pub close_on_focus_out: bool,
 }
 
 impl Default for GeneralConfig {
@@ -53,6 +55,7 @@ impl Default for GeneralConfig {
             hide_secondary_header: default_hide_secondary_header(),
             enable_theming: default_enable_theming(),
             enable_clipping: default_enable_clipping(),
+            close_on_focus_out: default_close_on_focus_out(),
         }
     }
 }
@@ -183,6 +186,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.hide_secondary_header, false);
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
+        assert_eq!(cfg.general.close_on_focus_out, true);
     }
 
     #[test]
