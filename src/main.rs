@@ -1,0 +1,170 @@
+use std::collections::VecDeque;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Duration;
+
+use clipit_rs::clipboard::ClipboardMonitor;
+use clipit_rs::config::Config;
+use clipit_rs::history::{ClipItem, HistoryManager};
+use clipit_rs::hotkey::parse_hotkey;
+use clipit_rs::popup;
+use clipit_rs::storage;
+
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    match args.get(1).map(|s| s.as_str()) {
+        Some("--popup") => cmd_popup(),
+        Some("--clear") => cmd_clear(),
+        Some("--version") | Some("-V") => cmd_version(),
+        Some("--help") | Some("-h") => cmd_help(),
+        _ => run_daemon(),
+    }
+}
+
+// ── commands ───────────────────────────────────────────────────────
+
+fn cmd_popup() {
+    let config = Config::load();
+    let should_paste = Arc::new(AtomicBool::new(false));
+    popup::run_popup(config, should_paste);
+}
+
+fn cmd_clear() {
+    let items = storage::load_history();
+    for item in &items {
+        if let ClipItem::Image { filename, .. } = item {
+            if !filename.is_empty() {
+                storage::delete_image_file(filename);
+            }
+        }
+    }
+
+    if storage::save_history(&VecDeque::new()).is_ok() {
+        println!("History cleared.");
+    } else {
+        eprintln!("Failed to clear history.");
+        std::process::exit(1);
+    }
+}
+
+fn cmd_version() {
+    println!("clipit-rs 0.2.0");
+}
+
+fn cmd_help() {
+    println!(
+        r#"clipit-rs — minimal clipboard history manager
+
+USAGE:
+    clipit-rs              Start daemon (monitor clipboard + hotkey)
+    clipit-rs --popup      Show the history popup
+    clipit-rs --clear      Delete all history and saved images
+    clipit-rs --version    Print version
+    clipit-rs --help       Show this help
+
+CONFIG:
+    ~/.config/clipit/config.toml
+
+DATA:
+    ~/.local/share/clipit/index.json
+    ~/.local/share/clipit/images/
+"#
+    );
+}
+
+// ── daemon ─────────────────────────────────────────────────────────
+
+fn run_daemon() {
+    let config = Config::load();
+
+    let _ = std::fs::create_dir_all(Config::data_dir());
+    let _ = std::fs::create_dir_all(Config::images_dir());
+
+    let mut history = HistoryManager::new(
+        config.general.max_text_items,
+        config.general.max_image_items,
+    );
+    history.set_items(storage::load_history());
+    storage::cleanup_orphaned(history.items());
+
+    let mut monitor = ClipboardMonitor::new();
+
+    use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+    let hotkey_mgr = GlobalHotKeyManager::new().ok();
+    let parsed_hotkey = parse_hotkey(&config.general.hotkey);
+    let mut hotkey_registered = false;
+
+    if let (Some(ref mgr), Some(hk)) = (&hotkey_mgr, parsed_hotkey) {
+        match mgr.register(hk) {
+            Ok(()) => {
+                eprintln!("[daemon] hotkey registered: {}", config.general.hotkey);
+                hotkey_registered = true;
+            }
+            Err(e) => {
+                eprintln!("[daemon] warning: could not register hotkey: {e}");
+                eprintln!("[daemon] you can still use: clipit-rs --popup");
+            }
+        }
+    } else {
+        eprintln!(
+            "[daemon] warning: could not parse hotkey '{}', running without hotkey",
+            config.general.hotkey
+        );
+        eprintln!("[daemon] you can still use: clipit-rs --popup");
+    }
+
+    eprintln!(
+        "[daemon] started — polling every {}ms, max {} text / {} images",
+        config.general.poll_interval_ms,
+        config.general.max_text_items,
+        config.general.max_image_items,
+    );
+
+    let hotkey_rx = GlobalHotKeyEvent::receiver();
+
+    loop {
+        if let Some(raw) = monitor.poll() {
+            let item = match raw {
+                ClipItem::Image {
+                    data: Some(ref bytes),
+                    width,
+                    height,
+                    timestamp,
+                    ..
+                } => match storage::save_image(bytes, width, height) {
+                    Ok(filename) => ClipItem::Image {
+                        width,
+                        height,
+                        timestamp,
+                        filename,
+                        data: None,
+                    },
+                    Err(e) => {
+                        eprintln!("[daemon] failed to save image: {e}");
+                        std::thread::sleep(Duration::from_millis(config.general.poll_interval_ms));
+                        continue;
+                    }
+                },
+                other => other,
+            };
+
+            if history.add(item) {
+                if let Err(e) = storage::save_history(history.items()) {
+                    eprintln!("[daemon] failed to save history: {e}");
+                }
+            }
+        }
+
+        if hotkey_registered {
+            if let Ok(event) = hotkey_rx.try_recv() {
+                if event.state == HotKeyState::Pressed {
+                    if let Ok(exe) = std::env::current_exe() {
+                        let _ = std::process::Command::new(exe).arg("--popup").spawn();
+                    }
+                }
+            }
+        }
+
+        std::thread::sleep(Duration::from_millis(config.general.poll_interval_ms));
+    }
+}
