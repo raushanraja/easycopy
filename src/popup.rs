@@ -33,10 +33,14 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     let selected_item_for_app = selected_item.clone();
 
     let _ = eframe::run_native(
-        "clipit-rs",
+        "easycopy",
         options,
         Box::new(move |cc| {
-            apply_theme_and_fonts(&cc.egui_ctx, config.general.theme.as_str());
+            apply_theme_and_fonts(
+                &cc.egui_ctx,
+                config.general.theme.as_str(),
+                config.general.enable_theming,
+            );
             Ok(Box::new(PopupApp::new(
                 cc,
                 config,
@@ -112,7 +116,10 @@ fn simulate_paste() {
         .status();
 }
 
-fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str) {
+fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: bool) {
+    if !enable_theming {
+        return;
+    }
     let mut visuals = if theme == "light" {
         egui::Visuals::light()
     } else {
@@ -266,7 +273,7 @@ fn paint_trash_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
     );
 }
 
-fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool) {
+fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool, enable_theming: bool) {
     let size = egui::vec2(36.0, 36.0);
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
 
@@ -277,7 +284,9 @@ fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool) {
             egui::Color32::from_rgba_unmultiplied(0, 0, 0, 15)
         }
     } else {
-        if ui.visuals().dark_mode {
+        if !enable_theming {
+            ui.visuals().widgets.noninteractive.bg_fill
+        } else if ui.visuals().dark_mode {
             egui::Color32::from_rgb(20, 26, 38) // Slate 900
         } else {
             egui::Color32::from_rgb(241, 245, 249) // Slate 100
@@ -285,9 +294,13 @@ fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool) {
     };
 
     let icon_color = if is_selected {
-        egui::Color32::WHITE
+        ui.visuals().text_color()
     } else {
-        egui::Color32::from_rgb(99, 102, 241) // Indigo 500
+        if !enable_theming {
+            ui.visuals().text_color()
+        } else {
+            egui::Color32::from_rgb(99, 102, 241) // Indigo 500
+        }
     };
 
     ui.painter().circle_filled(rect.center(), 18.0, bg_color);
@@ -313,6 +326,7 @@ struct PopupApp {
     preview_chars: usize,
     focus_search_once: bool,
     scroll_to_selected_once: bool,
+    config: Config,
 }
 
 impl PopupApp {
@@ -336,6 +350,7 @@ impl PopupApp {
             preview_chars: config.general.preview_chars,
             focus_search_once: true,
             scroll_to_selected_once: false,
+            config,
         }
     }
 
@@ -445,19 +460,31 @@ impl PopupApp {
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
+        let show_main = !self.config.general.hide_main_header;
+        let show_sec = !self.config.general.hide_secondary_header;
+        let vertical_padding = if show_main || show_sec { 16.0 } else { 8.0 };
+
         egui::Frame::none()
-            .inner_margin(egui::Margin::symmetric(20.0, 16.0))
+            .inner_margin(egui::Margin::symmetric(20.0, vertical_padding))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(egui::RichText::new("Clipit").heading().strong());
-                        ui.add_space(2.0);
-                        ui.label(
-                            egui::RichText::new("Clipboard history")
-                                .size(13.0)
-                                .weak(),
-                        );
-                    });
+                    if show_main || show_sec {
+                        ui.vertical(|ui| {
+                            if show_main {
+                                ui.label(egui::RichText::new("EasyCopy").heading().strong());
+                            }
+                            if show_sec {
+                                if show_main {
+                                    ui.add_space(2.0);
+                                }
+                                ui.label(
+                                    egui::RichText::new("Clipboard history")
+                                        .size(13.0)
+                                        .weak(),
+                                );
+                            }
+                        });
+                    }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         // Round hoverable close button
@@ -684,19 +711,25 @@ impl PopupApp {
         }
 
         let fill = if is_selected {
-            if ui.visuals().dark_mode {
+            if !self.config.general.enable_theming {
+                ui.visuals().selection.bg_fill
+            } else if ui.visuals().dark_mode {
                 egui::Color32::from_rgb(30, 27, 75) // Indigo 950
             } else {
                 egui::Color32::from_rgb(224, 231, 255) // Indigo 100
             }
         } else if response.hovered() {
-            if ui.visuals().dark_mode {
+            if !self.config.general.enable_theming {
+                ui.visuals().widgets.hovered.bg_fill
+            } else if ui.visuals().dark_mode {
                 egui::Color32::from_rgb(20, 26, 38) // Slate 900
             } else {
                 egui::Color32::from_rgb(241, 245, 249) // Slate 100
             }
         } else {
-            if ui.visuals().dark_mode {
+            if !self.config.general.enable_theming {
+                ui.visuals().widgets.noninteractive.bg_fill
+            } else if ui.visuals().dark_mode {
                 egui::Color32::from_rgb(15, 20, 30) // Slate 950
             } else {
                 egui::Color32::from_rgb(255, 255, 255) // White
@@ -704,21 +737,25 @@ impl PopupApp {
         };
 
         let stroke = if is_selected {
-            egui::Stroke::new(1.5, egui::Color32::from_rgb(99, 102, 241)) // Indigo 500
+            if !self.config.general.enable_theming {
+                egui::Stroke::new(1.5, ui.visuals().selection.bg_fill)
+            } else {
+                egui::Stroke::new(1.5, egui::Color32::from_rgb(99, 102, 241)) // Indigo 500
+            }
         } else {
             egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
         };
 
         egui::Frame::none()
             .fill(fill)
-            .rounding(12.0)
+            .rounding(if self.config.general.enable_theming { 12.0 } else { 0.0 })
             .stroke(stroke)
             .inner_margin(egui::Margin::symmetric(14.0, 10.0))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected {
+                if is_selected && self.config.general.enable_theming {
                     let bar_width = 4.0;
                     let bar_height = 24.0;
                     let bar_rect = egui::Rect::from_center_size(
@@ -735,7 +772,7 @@ impl PopupApp {
                 ClipItem::Text { content, timestamp } => {
                     ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
                         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            draw_icon_badge(ui, "text", is_selected);
+                            draw_icon_badge(ui, "text", is_selected, self.config.general.enable_theming);
                             ui.add_space(8.0);
 
                             let available_width = (ui.available_width() - 40.0).max(120.0);
@@ -802,7 +839,7 @@ impl PopupApp {
                                     .rounding(egui::Rounding::same(6.0));
                                 ui.add(img);
                             } else {
-                                draw_icon_badge(ui, "image", is_selected);
+                                draw_icon_badge(ui, "image", is_selected, self.config.general.enable_theming);
                             }
                             ui.add_space(12.0);
 
@@ -925,7 +962,7 @@ impl eframe::App for PopupApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::none()
                 .fill(ctx.style().visuals.window_fill)
-                .rounding(16.0)
+                .rounding(if self.config.general.enable_theming { 16.0 } else { 0.0 })
                 .stroke(egui::Stroke::new(1.0, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
             )
             .show(ctx, |ui| {

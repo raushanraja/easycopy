@@ -11,6 +11,10 @@ fn default_popup_height() -> f32 { 720.0 }
 fn default_preview_chars() -> usize { 220 }
 fn default_paste_delay_ms() -> u64 { 120 }
 fn default_theme() -> String { "dark".to_string() }
+fn default_hide_main_header() -> bool { false }
+fn default_hide_secondary_header() -> bool { false }
+fn default_enable_theming() -> bool { true }
+fn default_enable_clipping() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -26,6 +30,10 @@ pub struct GeneralConfig {
     pub paste_delay_ms: u64,
     /// "dark", "light", or "system".
     pub theme: String,
+    pub hide_main_header: bool,
+    pub hide_secondary_header: bool,
+    pub enable_theming: bool,
+    pub enable_clipping: bool,
 }
 
 impl Default for GeneralConfig {
@@ -41,6 +49,10 @@ impl Default for GeneralConfig {
             preview_chars: default_preview_chars(),
             paste_delay_ms: default_paste_delay_ms(),
             theme: default_theme(),
+            hide_main_header: default_hide_main_header(),
+            hide_secondary_header: default_hide_secondary_header(),
+            enable_theming: default_enable_theming(),
+            enable_clipping: default_enable_clipping(),
         }
     }
 }
@@ -61,13 +73,13 @@ impl Config {
     pub fn config_dir() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("clipit")
+            .join("easycopy")
     }
 
     pub fn data_dir() -> PathBuf {
         dirs::data_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join("clipit")
+            .join("easycopy")
     }
 
     pub fn images_dir() -> PathBuf {
@@ -75,7 +87,7 @@ impl Config {
     }
 
     pub fn config_path() -> PathBuf {
-        Self::config_dir().join("config.toml")
+        Self::config_dir().join("easycopy.toml")
     }
 
     pub fn load() -> Self {
@@ -167,6 +179,10 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.max_text_items, 10);
         assert_eq!(cfg.general.popup_width, 640.0);
         assert_eq!(cfg.general.preview_chars, 220);
+        assert_eq!(cfg.general.hide_main_header, false);
+        assert_eq!(cfg.general.hide_secondary_header, false);
+        assert_eq!(cfg.general.enable_theming, true);
+        assert_eq!(cfg.general.enable_clipping, true);
     }
 
     #[test]

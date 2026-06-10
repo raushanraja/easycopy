@@ -169,34 +169,36 @@ fn run_daemon() {
         tick_count += 1;
         if tick_count >= ticks_per_poll {
             tick_count = 0;
-            if let Some(raw) = monitor.poll() {
-                let item = match raw {
-                    ClipItem::Image {
-                        data: Some(ref bytes),
-                        width,
-                        height,
-                        timestamp,
-                        ..
-                    } => match storage::save_image(bytes, width, height) {
-                        Ok(filename) => ClipItem::Image {
+            if config.general.enable_clipping {
+                if let Some(raw) = monitor.poll() {
+                    let item = match raw {
+                        ClipItem::Image {
+                            data: Some(ref bytes),
                             width,
                             height,
                             timestamp,
-                            filename,
-                            data: None,
+                            ..
+                        } => match storage::save_image(bytes, width, height) {
+                            Ok(filename) => ClipItem::Image {
+                                width,
+                                height,
+                                timestamp,
+                                filename,
+                                data: None,
+                            },
+                            Err(e) => {
+                                eprintln!("[daemon] failed to save image: {e}");
+                                std::thread::sleep(Duration::from_millis(tick_ms));
+                                continue;
+                            }
                         },
-                        Err(e) => {
-                            eprintln!("[daemon] failed to save image: {e}");
-                            std::thread::sleep(Duration::from_millis(tick_ms));
-                            continue;
-                        }
-                    },
-                    other => other,
-                };
+                        other => other,
+                    };
 
-                if history.add(item) {
-                    if let Err(e) = storage::save_history(history.items()) {
-                        eprintln!("[daemon] failed to save history: {e}");
+                    if history.add(item) {
+                        if let Err(e) = storage::save_history(history.items()) {
+                            eprintln!("[daemon] failed to save history: {e}");
+                        }
                     }
                 }
             }
