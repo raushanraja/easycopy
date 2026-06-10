@@ -462,128 +462,117 @@ impl PopupApp {
     fn draw_header(&mut self, ui: &mut egui::Ui) {
         let show_main = !self.config.general.hide_main_header;
         let show_sec = !self.config.general.hide_secondary_header;
-        let vertical_padding = if show_main || show_sec { 16.0 } else { 8.0 };
+
+        if !show_main && !show_sec {
+            return;
+        }
 
         egui::Frame::none()
-            .inner_margin(egui::Margin::symmetric(20.0, vertical_padding))
+            .inner_margin(egui::Margin::symmetric(20.0, 16.0))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if show_main || show_sec {
-                        ui.vertical(|ui| {
-                            if show_main {
-                                ui.label(egui::RichText::new("EasyCopy").heading().strong());
-                            }
-                            if show_sec {
-                                if show_main {
-                                    ui.add_space(2.0);
-                                }
-                                ui.label(
-                                    egui::RichText::new("Clipboard history")
-                                        .size(13.0)
-                                        .weak(),
-                                );
-                            }
-                        });
+                ui.vertical(|ui| {
+                    if show_main {
+                        ui.label(egui::RichText::new("EasyCopy").heading().strong());
                     }
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Round hoverable close button
-                        let button_size = egui::vec2(28.0, 28.0);
-                        let (rect, resp) = ui.allocate_exact_size(button_size, egui::Sense::click());
-                        let bg_fill = if resp.clicked() {
-                            ui.visuals().widgets.active.bg_fill
-                        } else if resp.hovered() {
-                            ui.visuals().widgets.hovered.bg_fill
-                        } else {
-                            egui::Color32::TRANSPARENT
-                        };
-                        ui.painter().circle_filled(rect.center(), 14.0, bg_fill);
-                        
-                        // Render programmatically drawn close icon inside
-                        let close_icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(10.0, 10.0));
-                        paint_close_icon(ui, close_icon_rect, ui.visuals().text_color());
-
-                        if resp.clicked() {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    if show_sec {
+                        if show_main {
+                            ui.add_space(2.0);
                         }
-
-                        ui.add_space(12.0);
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{} shown / {} total",
-                                self.filtered.len(),
-                                self.all.len()
-                            ))
-                            .size(13.0)
-                            .weak(),
+                            egui::RichText::new("Clipboard history")
+                                .size(13.0)
+                                .weak(),
                         );
-                    });
+                    }
                 });
             });
     }
 
     fn draw_search(&mut self, ui: &mut egui::Ui) {
+        let has_no_header = self.config.general.hide_main_header && self.config.general.hide_secondary_header;
+        let top_margin = if has_no_header { 18.0 } else { 8.0 };
+
         egui::Frame::none()
-            .inner_margin(egui::Margin::symmetric(20.0, 8.0))
+            .inner_margin(egui::Margin {
+                left: 20.0,
+                right: 20.0,
+                top: top_margin,
+                bottom: 8.0,
+            })
             .show(ui, |ui| {
-                let bg_fill = ui.visuals().extreme_bg_color;
-                let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
+                ui.horizontal(|ui| {
+                    let label_text = format!("{} / {}", self.filtered.len(), self.all.len());
+                    let label_width = 75.0;
+                    let search_width = (ui.available_width() - label_width - 8.0).max(100.0);
 
-                egui::Frame::none()
-                    .fill(bg_fill)
-                    .stroke(stroke)
-                    .rounding(10.0)
-                    .inner_margin(egui::Margin::symmetric(12.0, 8.0))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            // Search icon
-                            let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                            paint_search_icon(ui, icon_rect, ui.visuals().weak_text_color());
+                    let bg_fill = ui.visuals().extreme_bg_color;
+                    let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
 
-                            ui.add_space(6.0);
+                    egui::Frame::none()
+                        .fill(bg_fill)
+                        .stroke(stroke)
+                        .rounding(10.0)
+                        .inner_margin(egui::Margin::symmetric(12.0, 8.0))
+                        .show(ui, |ui| {
+                            ui.set_width(search_width);
+                            ui.horizontal(|ui| {
+                                // Search icon
+                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                paint_search_icon(ui, icon_rect, ui.visuals().weak_text_color());
 
-                            let available_width = if self.query.is_empty() {
-                                ui.available_width()
-                            } else {
-                                (ui.available_width() - 32.0).max(100.0)
-                            };
+                                ui.add_space(6.0);
 
-                            let response = ui.add_sized(
-                                [available_width, 22.0],
-                                egui::TextEdit::singleline(&mut self.query)
-                                    .font(egui::TextStyle::Body)
-                                    .frame(false)
-                                    .hint_text(SEARCH_HINT),
-                            );
+                                let available_width = if self.query.is_empty() {
+                                    ui.available_width()
+                                } else {
+                                    (ui.available_width() - 32.0).max(100.0)
+                                };
 
-                            if self.focus_search_once {
-                                response.request_focus();
-                                self.focus_search_once = false;
-                            }
+                                let response = ui.add_sized(
+                                    [available_width, 22.0],
+                                    egui::TextEdit::singleline(&mut self.query)
+                                        .font(egui::TextStyle::Body)
+                                        .frame(false)
+                                        .hint_text(SEARCH_HINT),
+                                );
 
-                            if response.changed() {
-                                self.apply_filter();
-                                self.selected = 0;
-                            }
+                                if self.focus_search_once {
+                                    response.request_focus();
+                                    self.focus_search_once = false;
+                                }
 
-                            if !self.query.is_empty() {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let (btn_rect, btn_resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-                                    let btn_color = if btn_resp.hovered() {
-                                        ui.visuals().text_color()
-                                    } else {
-                                        ui.visuals().weak_text_color()
-                                    };
-                                    let close_icon_rect = egui::Rect::from_center_size(btn_rect.center(), egui::vec2(8.0, 8.0));
-                                    paint_close_icon(ui, close_icon_rect, btn_color);
-                                    if btn_resp.clicked() {
-                                        self.query.clear();
-                                        self.apply_filter();
-                                    }
-                                });
-                            }
+                                if response.changed() {
+                                    self.apply_filter();
+                                    self.selected = 0;
+                                }
+
+                                if !self.query.is_empty() {
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let (btn_rect, btn_resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
+                                        let btn_color = if btn_resp.hovered() {
+                                            ui.visuals().text_color()
+                                        } else {
+                                            ui.visuals().weak_text_color()
+                                        };
+                                        let close_icon_rect = egui::Rect::from_center_size(btn_rect.center(), egui::vec2(8.0, 8.0));
+                                        paint_close_icon(ui, close_icon_rect, btn_color);
+                                        if btn_resp.clicked() {
+                                            self.query.clear();
+                                            self.apply_filter();
+                                        }
+                                    });
+                                }
+                            });
                         });
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            egui::RichText::new(label_text)
+                                .size(13.0)
+                                .weak(),
+                        );
                     });
+                });
             });
     }
 
