@@ -1011,11 +1011,32 @@ fn image_subtitle(filename: &str, ts: u64) -> String {
     image_subtitle_with_now(filename, ts, now)
 }
 
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{} KB", bytes / 1024)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
+}
+
 fn image_subtitle_with_now(filename: &str, ts: u64, now: u64) -> String {
     if filename.is_empty() {
         relative_time_with_now(ts, now)
     } else {
-        format!("{} · {}", filename, relative_time_with_now(ts, now))
+        let size_str = if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+            let bytes = meta.len();
+            format_size(bytes)
+        } else {
+            "".to_string()
+        };
+
+        if size_str.is_empty() {
+            format!("{} · {}", filename, relative_time_with_now(ts, now))
+        } else {
+            format!("{} · {} · {}", filename, size_str, relative_time_with_now(ts, now))
+        }
     }
 }
 
@@ -1078,5 +1099,15 @@ mod tests {
     fn image_subtitle_handles_empty_filename() {
         assert_eq!(image_subtitle_with_now("", 90, 100), "10s ago");
         assert_eq!(image_subtitle_with_now("shot.png", 90, 100), "shot.png · 10s ago");
+    }
+
+    #[test]
+    fn format_size_works_for_all_ranges() {
+        assert_eq!(format_size(500), "500 B");
+        assert_eq!(format_size(1024), "1 KB");
+        assert_eq!(format_size(2048), "2 KB");
+        assert_eq!(format_size(150000), "146 KB");
+        assert_eq!(format_size(1024 * 1024), "1.0 MB");
+        assert_eq!(format_size(2500000), "2.4 MB");
     }
 }
