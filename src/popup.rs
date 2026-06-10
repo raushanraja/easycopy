@@ -29,18 +29,62 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     let auto_paste = config.general.auto_paste;
     let paste_delay_ms = config.general.paste_delay_ms;
 
+    let selected_item = Arc::new(std::sync::Mutex::new(None));
+    let selected_item_for_app = selected_item.clone();
+
     let _ = eframe::run_native(
         "clipit-rs",
         options,
         Box::new(move |cc| {
             apply_theme_and_fonts(&cc.egui_ctx, config.general.theme.as_str());
-            Ok(Box::new(PopupApp::new(cc, config, should_paste_after_window)))
+            Ok(Box::new(PopupApp::new(
+                cc,
+                config,
+                should_paste_after_window,
+                selected_item_for_app,
+            )))
         }),
     );
 
-    if auto_paste && should_paste.load(Ordering::Relaxed) {
-        std::thread::sleep(std::time::Duration::from_millis(paste_delay_ms));
-        simulate_paste();
+    let item_to_write = {
+        let mut lock = selected_item.lock().unwrap();
+        lock.take()
+    };
+
+    if let Some(item) = item_to_write {
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            let is_image = item.is_image();
+            let write_result = match item {
+                ClipItem::Text { content, .. } => cb.set_text(content),
+                ClipItem::Image { filename, .. } => {
+                    if let Ok((w, h, data)) = storage::load_image(&filename) {
+                        let img_data = arboard::ImageData {
+                            width: w as usize,
+                            height: h as usize,
+                            bytes: std::borrow::Cow::Owned(data),
+                        };
+                        cb.set_image(img_data)
+                    } else {
+                        Err(arboard::Error::ContentNotAvailable)
+                    }
+                }
+            };
+
+            if write_result.is_ok() {
+                if auto_paste && should_paste.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(paste_delay_ms));
+                    simulate_paste();
+                }
+                // Keep the clipboard connection alive so target application has time to copy it.
+                // Text items require less time (e.g. 1.0 second), while images require more (e.g. 3.0 seconds).
+                let keep_alive_duration = if is_image {
+                    std::time::Duration::from_secs(3)
+                } else {
+                    std::time::Duration::from_secs(1)
+                };
+                std::thread::sleep(keep_alive_duration);
+            }
+        }
     }
 }
 
@@ -249,6 +293,7 @@ struct PopupApp {
     textures: HashMap<String, egui::TextureHandle>,
     textures_loaded: bool,
     should_paste: Arc<AtomicBool>,
+    selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     preview_chars: usize,
     focus_search_once: bool,
     scroll_to_selected_once: bool,
@@ -259,6 +304,7 @@ impl PopupApp {
         _cc: &eframe::CreationContext<'_>,
         config: Config,
         should_paste: Arc<AtomicBool>,
+        selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     ) -> Self {
         let all: Vec<ClipItem> = storage::load_history().into_iter().collect();
         let filtered: Vec<usize> = (0..all.len()).collect();
@@ -270,6 +316,7 @@ impl PopupApp {
             textures: HashMap::new(),
             textures_loaded: false,
             should_paste,
+            selected_item_out,
             preview_chars: config.general.preview_chars,
             focus_search_once: true,
             scroll_to_selected_once: false,
@@ -330,22 +377,8 @@ impl PopupApp {
 
     fn select_and_close(&self, ctx: &egui::Context) {
         if let Some(item) = self.selected_item() {
-            if let Ok(mut cb) = arboard::Clipboard::new() {
-                match item {
-                    ClipItem::Text { content, .. } => {
-                        let _ = cb.set_text(content.clone());
-                    }
-                    ClipItem::Image { filename, .. } => {
-                        if let Ok((w, h, data)) = storage::load_image(filename) {
-                            let img_data = arboard::ImageData {
-                                width: w as usize,
-                                height: h as usize,
-                                bytes: std::borrow::Cow::Owned(data),
-                            };
-                            let _ = cb.set_image(img_data);
-                        }
-                    }
-                }
+            if let Ok(mut out) = self.selected_item_out.lock() {
+                *out = Some(item.clone());
             }
             self.should_paste.store(true, Ordering::Relaxed);
         }
