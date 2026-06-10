@@ -52,40 +52,56 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     };
 
     if let Some(item) = item_to_write {
-        if let Ok(mut cb) = arboard::Clipboard::new() {
-            let is_image = item.is_image();
-            let write_result = match item {
-                ClipItem::Text { content, .. } => cb.set_text(content),
-                ClipItem::Image { filename, .. } => {
-                    if let Ok((w, h, data)) = storage::load_image(&filename) {
-                        let img_data = arboard::ImageData {
-                            width: w as usize,
-                            height: h as usize,
-                            bytes: std::borrow::Cow::Owned(data),
-                        };
-                        cb.set_image(img_data)
-                    } else {
-                        Err(arboard::Error::ContentNotAvailable)
+        if is_daemon_running() {
+            let pending_file = Config::data_dir().join("pending_paste.json");
+            if let Ok(json) = serde_json::to_string(&item) {
+                let _ = std::fs::write(pending_file, json);
+            }
+        } else {
+            if let Ok(mut cb) = arboard::Clipboard::new() {
+                let is_image = item.is_image();
+                let write_result = match item {
+                    ClipItem::Text { content, .. } => cb.set_text(content),
+                    ClipItem::Image { filename, .. } => {
+                        if let Ok((w, h, data)) = storage::load_image(&filename) {
+                            let img_data = arboard::ImageData {
+                                width: w as usize,
+                                height: h as usize,
+                                bytes: std::borrow::Cow::Owned(data),
+                            };
+                            cb.set_image(img_data)
+                        } else {
+                            Err(arboard::Error::ContentNotAvailable)
+                        }
                     }
-                }
-            };
-
-            if write_result.is_ok() {
-                if auto_paste && should_paste.load(Ordering::Relaxed) {
-                    std::thread::sleep(std::time::Duration::from_millis(paste_delay_ms));
-                    simulate_paste();
-                }
-                // Keep the clipboard connection alive so target application has time to copy it.
-                // Text items require less time (e.g. 1.0 second), while images require more (e.g. 3.0 seconds).
-                let keep_alive_duration = if is_image {
-                    std::time::Duration::from_secs(3)
-                } else {
-                    std::time::Duration::from_secs(1)
                 };
-                std::thread::sleep(keep_alive_duration);
+
+                if write_result.is_ok() {
+                    if auto_paste && should_paste.load(Ordering::Relaxed) {
+                        std::thread::sleep(std::time::Duration::from_millis(paste_delay_ms));
+                        simulate_paste();
+                    }
+                    // Keep the clipboard connection alive so target application has time to copy it.
+                    let keep_alive_duration = if is_image {
+                        std::time::Duration::from_secs(3)
+                    } else {
+                        std::time::Duration::from_secs(1)
+                    };
+                    std::thread::sleep(keep_alive_duration);
+                }
             }
         }
     }
+}
+
+fn is_daemon_running() -> bool {
+    let pid_file = Config::data_dir().join("daemon.pid");
+    if let Ok(pid_str) = std::fs::read_to_string(pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            return std::path::Path::new(&format!("/proc/{}", pid)).exists();
+        }
+    }
+    false
 }
 
 fn simulate_paste() {

@@ -80,6 +80,11 @@ fn run_daemon() {
     let _ = std::fs::create_dir_all(Config::data_dir());
     let _ = std::fs::create_dir_all(Config::images_dir());
 
+    // Write PID file to allow the popup to verify the daemon is active
+    let pid = std::process::id();
+    let pid_file = Config::data_dir().join("daemon.pid");
+    let _ = std::fs::write(&pid_file, pid.to_string());
+
     let mut history = HistoryManager::new(
         config.general.max_text_items,
         config.general.max_image_items,
@@ -122,35 +127,77 @@ fn run_daemon() {
 
     let hotkey_rx = GlobalHotKeyEvent::receiver();
 
+    let poll_interval = config.general.poll_interval_ms;
+    let tick_ms = 50;
+    let ticks_per_poll = (poll_interval / tick_ms).max(1);
+    let mut tick_count = 0;
+
     loop {
-        if let Some(raw) = monitor.poll() {
-            let item = match raw {
-                ClipItem::Image {
-                    data: Some(ref bytes),
-                    width,
-                    height,
-                    timestamp,
-                    ..
-                } => match storage::save_image(bytes, width, height) {
-                    Ok(filename) => ClipItem::Image {
+        // Check for pending paste request from the popup process
+        let pending_file = Config::data_dir().join("pending_paste.json");
+        if pending_file.exists() {
+            if let Ok(content) = std::fs::read_to_string(&pending_file) {
+                let _ = std::fs::remove_file(&pending_file);
+                if let Ok(item) = serde_json::from_str::<ClipItem>(&content) {
+                    if let Ok(mut cb) = arboard::Clipboard::new() {
+                        let write_ok = match item {
+                            ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
+                            ClipItem::Image { filename, .. } => {
+                                if let Ok((w, h, data)) = storage::load_image(&filename) {
+                                    let img_data = arboard::ImageData {
+                                        width: w as usize,
+                                        height: h as usize,
+                                        bytes: std::borrow::Cow::Owned(data),
+                                    };
+                                    cb.set_image(img_data).is_ok()
+                                } else {
+                                    false
+                                }
+                            }
+                        };
+                        if write_ok && config.general.auto_paste {
+                            std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
+                            let _ = std::process::Command::new("xdotool")
+                                .args(["key", "ctrl+v"])
+                                .status();
+                        }
+                    }
+                }
+            }
+        }
+
+        tick_count += 1;
+        if tick_count >= ticks_per_poll {
+            tick_count = 0;
+            if let Some(raw) = monitor.poll() {
+                let item = match raw {
+                    ClipItem::Image {
+                        data: Some(ref bytes),
                         width,
                         height,
                         timestamp,
-                        filename,
-                        data: None,
+                        ..
+                    } => match storage::save_image(bytes, width, height) {
+                        Ok(filename) => ClipItem::Image {
+                            width,
+                            height,
+                            timestamp,
+                            filename,
+                            data: None,
+                        },
+                        Err(e) => {
+                            eprintln!("[daemon] failed to save image: {e}");
+                            std::thread::sleep(Duration::from_millis(tick_ms));
+                            continue;
+                        }
                     },
-                    Err(e) => {
-                        eprintln!("[daemon] failed to save image: {e}");
-                        std::thread::sleep(Duration::from_millis(config.general.poll_interval_ms));
-                        continue;
-                    }
-                },
-                other => other,
-            };
+                    other => other,
+                };
 
-            if history.add(item) {
-                if let Err(e) = storage::save_history(history.items()) {
-                    eprintln!("[daemon] failed to save history: {e}");
+                if history.add(item) {
+                    if let Err(e) = storage::save_history(history.items()) {
+                        eprintln!("[daemon] failed to save history: {e}");
+                    }
                 }
             }
         }
@@ -165,6 +212,6 @@ fn run_daemon() {
             }
         }
 
-        std::thread::sleep(Duration::from_millis(config.general.poll_interval_ms));
+        std::thread::sleep(Duration::from_millis(tick_ms));
     }
 }
