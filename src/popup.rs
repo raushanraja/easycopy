@@ -690,10 +690,13 @@ impl PopupApp {
                             ui.add_space(8.0);
 
                             let available_width = (ui.available_width() - 40.0).max(120.0);
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(available_width, 34.0),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |ui| {
+                            ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
+                                ui.vertical(|ui| {
+                                    let content_height = 35.0;
+                                    let available_h = ui.available_height();
+                                    if available_h > content_height {
+                                        ui.add_space((available_h - content_height) / 2.0);
+                                    }
                                     ui.set_width(available_width);
                                     ui.add(
                                         egui::Label::new(
@@ -714,8 +717,8 @@ impl PopupApp {
                                         .size(12.5)
                                         .weak(),
                                     );
-                                },
-                            );
+                                });
+                            });
 
                             if row < 9 {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -755,10 +758,13 @@ impl PopupApp {
                             ui.add_space(12.0);
 
                             let available_width = (ui.available_width() - 40.0).max(120.0);
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(available_width, 34.0),
-                                egui::Layout::top_down(egui::Align::Min),
-                                |ui| {
+                            ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
+                                ui.vertical(|ui| {
+                                    let content_height = 35.0;
+                                    let available_h = ui.available_height();
+                                    if available_h > content_height {
+                                        ui.add_space((available_h - content_height) / 2.0);
+                                    }
                                     ui.set_width(available_width);
                                     ui.add(
                                         egui::Label::new(
@@ -774,8 +780,8 @@ impl PopupApp {
                                             .size(12.5)
                                             .weak(),
                                     );
-                                },
-                            );
+                                });
+                            });
 
                             if row < 9 {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
