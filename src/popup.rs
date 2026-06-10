@@ -327,6 +327,7 @@ struct PopupApp {
     focus_search_once: bool,
     scroll_to_selected_once: bool,
     config: Config,
+    preview_image: Option<(String, egui::TextureHandle)>,
 }
 
 impl PopupApp {
@@ -351,6 +352,7 @@ impl PopupApp {
             focus_search_once: true,
             scroll_to_selected_once: false,
             config,
+            preview_image: None,
         }
     }
 
@@ -377,6 +379,19 @@ impl PopupApp {
         }
 
         self.textures_loaded = true;
+    }
+
+    fn load_large_image(&self, ctx: &egui::Context, filename: &str) -> Option<egui::TextureHandle> {
+        let path = Config::images_dir().join(filename);
+        if let Ok(img) = image::open(path) {
+            let large = img.resize(500, 500, image::imageops::FilterType::Triangle);
+            let rgba = large.to_rgba8();
+            let size = [rgba.width() as usize, rgba.height() as usize];
+            let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+            Some(ctx.load_texture(format!("large_{}", filename), ci, egui::TextureOptions::LINEAR))
+        } else {
+            None
+        }
     }
 
     fn apply_filter(&mut self) {
@@ -694,6 +709,16 @@ impl PopupApp {
         );
         let response = ui.interact(rect, card_id, egui::Sense::click());
 
+        if response.secondary_clicked() {
+            if let ClipItem::Image { filename, .. } = &item {
+                if !filename.is_empty() {
+                    if let Some(tex) = self.load_large_image(ui.ctx(), filename) {
+                        self.preview_image = Some((filename.clone(), tex));
+                    }
+                }
+            }
+        }
+
         if is_selected && self.scroll_to_selected_once {
             ui.scroll_to_rect(rect, Some(egui::Align::Center));
             self.scroll_to_selected_once = false;
@@ -881,6 +906,82 @@ impl PopupApp {
 
         response.clicked()
     }
+
+    fn draw_lightbox(&mut self, ui: &mut egui::Ui) {
+        let texture = if let Some((_, ref tex)) = self.preview_image {
+            Some(tex.clone())
+        } else {
+            None
+        };
+
+        if let Some(texture) = texture {
+            let mut close_preview = false;
+            let ctx = ui.ctx();
+            egui::Area::new(egui::Id::new("lightbox_overlay"))
+                .order(egui::Order::Foreground)
+                .fixed_pos(egui::pos2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    let screen_rect = ctx.screen_rect();
+                    let response = ui.allocate_rect(screen_rect, egui::Sense::click());
+                    
+                    // Dim background
+                    let bg_color = egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220);
+                    ui.painter().rect_filled(
+                        screen_rect,
+                        egui::Rounding::same(if self.config.general.enable_theming { 16.0 } else { 0.0 }),
+                        bg_color
+                    );
+
+                    if response.clicked() {
+                        close_preview = true;
+                    }
+
+                    // Calculate preview image size (fits screen with padding, max 500x500)
+                    let max_img_size = egui::vec2(
+                        screen_rect.width() - 80.0,
+                        screen_rect.height() - 100.0,
+                    ).min(egui::vec2(500.0, 500.0));
+                    
+                    let img_size = texture.size_vec2();
+                    let scale = (max_img_size.x / img_size.x)
+                        .min(max_img_size.y / img_size.y)
+                        .min(1.0);
+                    let scaled_size = img_size * scale;
+                    
+                    let image_rect = egui::Rect::from_center_size(screen_rect.center(), scaled_size);
+                    
+                    let img = egui::Image::new(&texture)
+                        .rounding(egui::Rounding::same(8.0));
+                    ui.put(image_rect, img);
+
+                    // Close button at top-right
+                    let btn_size = egui::vec2(28.0, 28.0);
+                    let close_btn_pos = egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
+                    let close_rect = egui::Rect::from_center_size(close_btn_pos, btn_size);
+                    
+                    let close_response = ui.interact(close_rect, egui::Id::new("lightbox_close_btn"), egui::Sense::click());
+                    let btn_bg = if close_response.clicked() {
+                        ui.visuals().widgets.active.bg_fill
+                    } else if close_response.hovered() {
+                        ui.visuals().widgets.hovered.bg_fill
+                    } else {
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30)
+                    };
+                    
+                    ui.painter().circle_filled(close_rect.center(), 14.0, btn_bg);
+                    let close_icon_rect = egui::Rect::from_center_size(close_rect.center(), egui::vec2(10.0, 10.0));
+                    paint_close_icon(ui, close_icon_rect, egui::Color32::WHITE);
+
+                    if close_response.clicked() {
+                        close_preview = true;
+                    }
+                });
+
+            if close_preview {
+                self.preview_image = None;
+            }
+        }
+    }
 }
 
 impl eframe::App for PopupApp {
@@ -916,7 +1017,11 @@ impl eframe::App for PopupApp {
         });
 
         if close {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            if self.preview_image.is_some() {
+                self.preview_image = None;
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
             return;
         }
         if down {
@@ -962,6 +1067,7 @@ impl eframe::App for PopupApp {
                     ui.add_space(6.0);
                     self.draw_footer(ui);
                 });
+                self.draw_lightbox(ui);
             });
     }
 }
