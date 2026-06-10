@@ -320,7 +320,6 @@ struct PopupApp {
     query: String,
     selected: usize,
     textures: HashMap<String, egui::TextureHandle>,
-    textures_loaded: bool,
     should_paste: Arc<AtomicBool>,
     selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     preview_chars: usize,
@@ -331,6 +330,7 @@ struct PopupApp {
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
     focused_once: bool,
+    rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
 }
 
 impl PopupApp {
@@ -342,13 +342,33 @@ impl PopupApp {
     ) -> Self {
         let all: Vec<ClipItem> = storage::load_history().into_iter().collect();
         let filtered: Vec<usize> = (0..all.len()).collect();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let all_cloned = all.clone();
+        std::thread::spawn(move || {
+            for item in all_cloned {
+                if let ClipItem::Image { filename, .. } = item {
+                    if filename.is_empty() {
+                        continue;
+                    }
+                    let path = Config::images_dir().join(&filename);
+                    if let Ok(img) = image::open(path) {
+                        let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
+                        let rgba = thumb.to_rgba8();
+                        let size = [rgba.width() as usize, rgba.height() as usize];
+                        let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                        let _ = tx.send((filename, ci));
+                    }
+                }
+            }
+        });
+
         Self {
             all,
             filtered,
             query: String::new(),
             selected: 0,
             textures: HashMap::new(),
-            textures_loaded: false,
             should_paste,
             selected_item_out,
             preview_chars: config.general.preview_chars,
@@ -359,32 +379,8 @@ impl PopupApp {
             lightbox_zoom: 1.0,
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
+            rx,
         }
-    }
-
-    fn load_textures(&mut self, ctx: &egui::Context) {
-        if self.textures_loaded {
-            return;
-        }
-
-        for item in &self.all {
-            if let ClipItem::Image { filename, .. } = item {
-                if filename.is_empty() || self.textures.contains_key(filename) {
-                    continue;
-                }
-
-                if let Ok(img) = image::open(Config::images_dir().join(filename)) {
-                    let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
-                    let rgba = thumb.to_rgba8();
-                    let size = [rgba.width() as usize, rgba.height() as usize];
-                    let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-                    let tex = ctx.load_texture(filename, ci, egui::TextureOptions::LINEAR);
-                    self.textures.insert(filename.clone(), tex);
-                }
-            }
-        }
-
-        self.textures_loaded = true;
     }
 
     fn load_large_image(&self, ctx: &egui::Context, filename: &str) -> Option<egui::TextureHandle> {
@@ -449,13 +445,13 @@ impl PopupApp {
         if let Some(ClipItem::Image { filename, .. }) = self.all.get(orig_idx) {
             if !filename.is_empty() {
                 storage::delete_image_file(filename);
+                self.textures.remove(filename);
             }
         }
 
         self.all.remove(orig_idx);
         self.persist_all();
         self.apply_filter();
-        self.textures_loaded = false;
     }
 
     fn clear_history(&mut self) {
@@ -471,7 +467,6 @@ impl PopupApp {
         self.persist_all();
         self.apply_filter();
         self.textures.clear();
-        self.textures_loaded = true;
     }
 
     fn persist_all(&self) {
@@ -1093,7 +1088,15 @@ impl PopupApp {
 
 impl eframe::App for PopupApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.load_textures(ctx);
+        let mut loaded_any = false;
+        while let Ok((filename, ci)) = self.rx.try_recv() {
+            let tex = ctx.load_texture(&filename, ci, egui::TextureOptions::LINEAR);
+            self.textures.insert(filename, tex);
+            loaded_any = true;
+        }
+        if loaded_any {
+            ctx.request_repaint();
+        }
 
         if self.config.general.close_on_focus_out {
             let focused = ctx.input(|i| i.focused);
