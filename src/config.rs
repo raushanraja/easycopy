@@ -6,9 +6,9 @@ fn default_max_image_items() -> usize { 50 }
 fn default_hotkey() -> String { "Ctrl+Alt+V".to_string() }
 fn default_auto_paste() -> bool { true }
 fn default_poll_interval_ms() -> u64 { 500 }
-fn default_popup_width() -> f32 { 520.0 }
-fn default_popup_height() -> f32 { 620.0 }
-fn default_preview_chars() -> usize { 180 }
+fn default_popup_width() -> f32 { 640.0 }
+fn default_popup_height() -> f32 { 720.0 }
+fn default_preview_chars() -> usize { 220 }
 fn default_paste_delay_ms() -> u64 { 120 }
 fn default_theme() -> String { "dark".to_string() }
 
@@ -165,8 +165,8 @@ poll_interval_ms = 250
         let mut cfg: Config = toml::from_str(text).unwrap();
         cfg.sanitize();
         assert_eq!(cfg.general.max_text_items, 10);
-        assert_eq!(cfg.general.popup_width, 520.0);
-        assert_eq!(cfg.general.preview_chars, 180);
+        assert_eq!(cfg.general.popup_width, 640.0);
+        assert_eq!(cfg.general.preview_chars, 220);
     }
 
     #[test]

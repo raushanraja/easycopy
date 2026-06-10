@@ -8,6 +8,7 @@ A small Linux clipboard history manager written in Rust.
 - Stores text history and PNG snapshots of copied images.
 - Opens a keyboard-driven popup with `Ctrl+Alt+V` by default.
 - Supports search, arrow navigation, Enter-to-paste, Delete-to-remove, and full history clear.
+- Uses a larger, clearer popup UI with bigger rows, bigger search box, stable keyboard navigation, and no constant search-focus reset during scrolling.
 - Keeps history on disk under `~/.local/share/clipit/`.
 - Keeps config under `~/.config/clipit/config.toml`.
 
@@ -66,9 +67,9 @@ max_image_items = 50
 hotkey = "Ctrl+Alt+V"
 auto_paste = true
 poll_interval_ms = 500
-popup_width = 520.0
-popup_height = 620.0
-preview_chars = 180
+popup_width = 640.0
+popup_height = 720.0
+preview_chars = 220
 paste_delay_ms = 120
 theme = "dark" # dark, light, or system
 ```
