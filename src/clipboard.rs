@@ -84,7 +84,14 @@ impl ClipboardMonitor {
 
 fn byte_hash(bytes: &[u8]) -> u64 {
     let mut h = DefaultHasher::new();
-    bytes.hash(&mut h);
+    // Hash length + first/last 4KB instead of every byte.
+    // For an 8 MB screenshot this turns an O(n) hash into O(1).
+    bytes.len().hash(&mut h);
+    let sample = 4096.min(bytes.len());
+    bytes[..sample].hash(&mut h);
+    if bytes.len() > sample {
+        bytes[bytes.len() - sample..].hash(&mut h);
+    }
     h.finish()
 }
 

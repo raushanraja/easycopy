@@ -56,12 +56,9 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     };
 
     if let Some(item) = item_to_write {
-        if is_daemon_running() {
-            let pending_file = Config::data_dir().join("pending_paste.json");
-            if let Ok(json) = serde_json::to_string(&item) {
-                let _ = std::fs::write(pending_file, json);
-            }
-        } else {
+        let sent_via_ipc = is_daemon_running()
+            && crate::ipc::send_paste_request(&item).is_ok();
+        if !sent_via_ipc {
             if let Ok(mut cb) = arboard::Clipboard::new() {
                 let is_image = item.is_image();
                 let write_result = match item {
@@ -331,6 +328,10 @@ struct PopupApp {
     lightbox_pan: egui::Vec2,
     focused_once: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
+    cached_char_counts: Vec<usize>,
+    cached_previews: Vec<String>,
+    cached_search: Vec<String>,
+    cached_file_sizes: HashMap<String, u64>,
 }
 
 impl PopupApp {
@@ -363,6 +364,35 @@ impl PopupApp {
             }
         });
 
+        // Pre-compute caches to avoid per-frame allocations in the render loop
+        let cached_char_counts: Vec<usize> = all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => content.chars().count(),
+            _ => 0,
+        }).collect();
+
+        let cached_previews: Vec<String> = all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => preview_text(content, config.general.preview_chars),
+            _ => String::new(),
+        }).collect();
+
+        let cached_search: Vec<String> = all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => content.to_lowercase(),
+            ClipItem::Image { width, height, filename, .. } => {
+                format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase()
+            }
+        }).collect();
+
+        let mut cached_file_sizes = HashMap::new();
+        for item in &all {
+            if let ClipItem::Image { filename, .. } = item {
+                if !filename.is_empty() {
+                    if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+                        cached_file_sizes.insert(filename.clone(), meta.len());
+                    }
+                }
+            }
+        }
+
         Self {
             all,
             filtered,
@@ -380,6 +410,10 @@ impl PopupApp {
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
             rx,
+            cached_char_counts,
+            cached_previews,
+            cached_search,
+            cached_file_sizes,
         }
     }
 
@@ -398,15 +432,44 @@ impl PopupApp {
 
     fn apply_filter(&mut self) {
         let q = self.query.trim().to_lowercase();
-        self.filtered = self
-            .all
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item_matches_query(item, &q))
+        let filtered: Vec<usize> = self.cached_search.iter().enumerate()
+            .filter(|(_, s)| q.is_empty() || s.contains(q.as_str()))
             .map(|(i, _)| i)
             .collect();
+        self.filtered = filtered;
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
         self.scroll_to_selected_once = true;
+    }
+
+    /// Recompute all per-item caches after the item list changes.
+    fn rebuild_caches(&mut self) {
+        self.cached_char_counts = self.all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => content.chars().count(),
+            _ => 0,
+        }).collect();
+
+        self.cached_previews = self.all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => preview_text(content, self.preview_chars),
+            _ => String::new(),
+        }).collect();
+
+        self.cached_search = self.all.iter().map(|item| match item {
+            ClipItem::Text { content, .. } => content.to_lowercase(),
+            ClipItem::Image { width, height, filename, .. } => {
+                format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase()
+            }
+        }).collect();
+
+        self.cached_file_sizes.clear();
+        for item in &self.all {
+            if let ClipItem::Image { filename, .. } = item {
+                if !filename.is_empty() && !self.cached_file_sizes.contains_key(filename) {
+                    if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+                        self.cached_file_sizes.insert(filename.clone(), meta.len());
+                    }
+                }
+            }
+        }
     }
 
     fn move_selection_down(&mut self) {
@@ -451,6 +514,7 @@ impl PopupApp {
 
         self.all.remove(orig_idx);
         self.persist_all();
+        self.rebuild_caches();
         self.apply_filter();
     }
 
@@ -465,14 +529,17 @@ impl PopupApp {
         self.all.clear();
         self.query.clear();
         self.persist_all();
-        self.apply_filter();
         self.textures.clear();
+        self.cached_char_counts.clear();
+        self.cached_previews.clear();
+        self.cached_search.clear();
+        self.cached_file_sizes.clear();
+        self.apply_filter();
     }
 
     fn persist_all(&self) {
-        let items: VecDeque<ClipItem> = self.all.clone().into_iter().collect();
+        let items: VecDeque<ClipItem> = self.all.iter().cloned().collect();
         let _ = storage::save_history(&items);
-        storage::cleanup_orphaned(&items);
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
@@ -616,10 +683,10 @@ impl PopupApp {
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 8.0;
                         ui.set_width(ui.available_width());
-                        let visible = self.filtered.clone();
-                        for (row, orig_idx) in visible.into_iter().enumerate() {
+                        for row in 0..self.filtered.len() {
+                            let orig_idx = self.filtered[row];
                             let Some(item) = self.all.get(orig_idx).cloned() else { continue };
-                            if self.draw_row(ui, row, item) {
+                            if self.draw_row(ui, row, orig_idx, item) {
                                 self.selected = row;
                                 self.select_and_close(ui.ctx());
                                 break;
@@ -696,7 +763,7 @@ impl PopupApp {
             });
     }
 
-    fn draw_row(&mut self, ui: &mut egui::Ui, row: usize, item: ClipItem) -> bool {
+    fn draw_row(&mut self, ui: &mut egui::Ui, row: usize, orig_idx: usize, item: ClipItem) -> bool {
         let is_selected = row == self.selected;
         let row_height = match &item {
             ClipItem::Image { .. } => 84.0,
@@ -801,9 +868,12 @@ impl PopupApp {
                                         ui.add_space((available_h - content_height) / 2.0);
                                     }
                                     ui.set_width(available_width);
+                                    let preview = self.cached_previews.get(orig_idx)
+                                        .cloned()
+                                        .unwrap_or_else(|| preview_text(content, self.preview_chars));
                                     ui.add(
                                         egui::Label::new(
-                                            egui::RichText::new(preview_text(content, self.preview_chars))
+                                            egui::RichText::new(preview)
                                                 .size(15.0)
                                                 .monospace()
                                                 .strong()
@@ -811,10 +881,13 @@ impl PopupApp {
                                         .truncate()
                                     );
                                     ui.add_space(2.0);
+                                    let char_count = self.cached_char_counts.get(orig_idx)
+                                        .copied()
+                                        .unwrap_or_else(|| content.chars().count());
                                     ui.label(
                                         egui::RichText::new(format!(
                                             "{} chars · {}",
-                                            content.chars().count(),
+                                            char_count,
                                             relative_time(*timestamp)
                                         ))
                                         .size(12.5)
@@ -878,8 +951,9 @@ impl PopupApp {
                                         .truncate()
                                     );
                                     ui.add_space(2.0);
+                                    let file_size = self.cached_file_sizes.get(filename).copied();
                                     ui.label(
-                                        egui::RichText::new(image_subtitle(filename, *timestamp))
+                                        egui::RichText::new(image_subtitle_cached(filename, *timestamp, file_size))
                                             .size(12.5)
                                             .weak(),
                                     );
@@ -1206,6 +1280,7 @@ fn draw_empty_state(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     });
 }
 
+#[cfg(test)]
 fn item_matches_query(item: &ClipItem, q: &str) -> bool {
     if q.is_empty() {
         return true;
@@ -1230,12 +1305,33 @@ fn preview_text(text: &str, max_chars: usize) -> String {
     preview
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn image_subtitle(filename: &str, ts: u64) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     image_subtitle_with_now(filename, ts, now)
+}
+
+/// Like `image_subtitle` but uses a pre-cached file size instead of
+/// calling `std::fs::metadata` on every frame.
+fn image_subtitle_cached(filename: &str, ts: u64, cached_size: Option<u64>) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    if filename.is_empty() {
+        relative_time_with_now(ts, now)
+    } else {
+        let size_str = cached_size.map(format_size).unwrap_or_default();
+        if size_str.is_empty() {
+            format!("{} · {}", filename, relative_time_with_now(ts, now))
+        } else {
+            format!("{} · {} · {}", filename, size_str, relative_time_with_now(ts, now))
+        }
+    }
 }
 
 fn format_size(bytes: u64) -> String {
@@ -1248,6 +1344,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
+#[cfg(test)]
 fn image_subtitle_with_now(filename: &str, ts: u64, now: u64) -> String {
     if filename.is_empty() {
         relative_time_with_now(ts, now)

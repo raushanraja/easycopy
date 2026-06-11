@@ -4,9 +4,14 @@ use std::collections::{HashSet, VecDeque};
 use std::io::Result;
 use std::path::{Path, PathBuf};
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(serde::Deserialize)]
 struct Index {
     items: VecDeque<ClipItem>,
+}
+
+#[derive(serde::Serialize)]
+struct IndexRef<'a> {
+    items: &'a VecDeque<ClipItem>,
 }
 
 // ── index persistence ──────────────────────────────────────────────
@@ -24,8 +29,10 @@ pub fn save_history_to_path(path: &Path, items: &VecDeque<ClipItem>) -> Result<(
         std::fs::create_dir_all(parent)?;
     }
     let tmp = path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(&Index { items: items.clone() }).unwrap_or_default();
-    std::fs::write(&tmp, json)?;
+    let file = std::fs::File::create(&tmp)?;
+    let writer = std::io::BufWriter::new(file);
+    serde_json::to_writer(writer, &IndexRef { items })
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     std::fs::rename(&tmp, path)?; // atomic on same filesystem
     Ok(())
 }
@@ -57,6 +64,25 @@ pub fn save_image_to_dir(dir: &Path, data: &[u8], w: u32, h: u32) -> Result<Stri
     let filename = format!("img_{}_{:03x}.png", ts, hash);
     let filepath = dir.join(&filename);
     let img = image::RgbaImage::from_raw(w, h, data.to_vec())
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
+    img.save(&filepath)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    Ok(filename)
+}
+
+/// Like `save_image` but takes ownership of the data buffer, avoiding an
+/// extra copy when the caller already owns the `Vec<u8>`.
+pub fn save_image_owned(data: Vec<u8>, w: u32, h: u32) -> Result<String> {
+    save_image_owned_to_dir(&Config::images_dir(), data, w, h)
+}
+
+pub fn save_image_owned_to_dir(dir: &Path, data: Vec<u8>, w: u32, h: u32) -> Result<String> {
+    std::fs::create_dir_all(dir)?;
+    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let hash = simple_hash(&data) & 0xFFF;
+    let filename = format!("img_{}_{:03x}.png", ts, hash);
+    let filepath = dir.join(&filename);
+    let img = image::RgbaImage::from_raw(w, h, data)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
     img.save(&filepath)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;

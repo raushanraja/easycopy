@@ -91,31 +91,20 @@ impl HistoryManager {
     }
 
     fn enforce_limits(&mut self) {
-        // Items are stored newest-first. Keep the first N text items and
-        // first N image items, then remove the older overflow entries.
+        // O(n) retain instead of O(n²) remove-in-reverse.
+        let max_text = self.max_text;
+        let max_image = self.max_image;
         let (mut tc, mut ic) = (0usize, 0usize);
-        let mut remove: Vec<usize> = Vec::new();
-
-        for (i, item) in self.items.iter().enumerate() {
-            match item {
-                ClipItem::Text { .. } => {
-                    tc += 1;
-                    if tc > self.max_text {
-                        remove.push(i);
-                    }
-                }
-                ClipItem::Image { .. } => {
-                    ic += 1;
-                    if ic > self.max_image {
-                        remove.push(i);
-                    }
-                }
+        self.items.retain(|item| match item {
+            ClipItem::Text { .. } => {
+                tc += 1;
+                tc <= max_text
             }
-        }
-
-        for i in remove.into_iter().rev() {
-            self.items.remove(i);
-        }
+            ClipItem::Image { .. } => {
+                ic += 1;
+                ic <= max_image
+            }
+        });
     }
 
     pub fn remove(&mut self, index: usize) -> Option<ClipItem> {

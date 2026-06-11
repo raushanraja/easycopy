@@ -7,6 +7,7 @@ use clipit_rs::clipboard::ClipboardMonitor;
 use clipit_rs::config::Config;
 use clipit_rs::history::{ClipItem, HistoryManager};
 use clipit_rs::hotkey::parse_hotkey;
+use clipit_rs::ipc;
 use clipit_rs::popup;
 use clipit_rs::storage;
 
@@ -77,13 +78,28 @@ DATA:
 fn run_daemon() {
     let config = Config::load();
 
-    let _ = std::fs::create_dir_all(Config::data_dir());
+    // Cache directory paths to avoid repeated PathBuf construction in the hot loop
+    let data_dir = Config::data_dir();
+    let _ = std::fs::create_dir_all(&data_dir);
     let _ = std::fs::create_dir_all(Config::images_dir());
 
     // Write PID file to allow the popup to verify the daemon is active
     let pid = std::process::id();
-    let pid_file = Config::data_dir().join("daemon.pid");
+    let pid_file = data_dir.join("daemon.pid");
     let _ = std::fs::write(&pid_file, pid.to_string());
+
+    // Start IPC server for event-driven popup→daemon communication
+    let ipc_rx = match ipc::start_server(&data_dir.join("daemon.sock")) {
+        Ok(rx) => {
+            eprintln!("[daemon] IPC server started");
+            Some(rx)
+        }
+        Err(e) => {
+            eprintln!("[daemon] warning: could not start IPC server: {e}");
+            eprintln!("[daemon] popup paste requests will be handled directly");
+            None
+        }
+    };
 
     let mut history = HistoryManager::new(
         config.general.max_text_items,
@@ -133,34 +149,30 @@ fn run_daemon() {
     let mut tick_count = 0;
 
     loop {
-        // Check for pending paste request from the popup process
-        let pending_file = Config::data_dir().join("pending_paste.json");
-        if pending_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&pending_file) {
-                let _ = std::fs::remove_file(&pending_file);
-                if let Ok(item) = serde_json::from_str::<ClipItem>(&content) {
-                    if let Ok(mut cb) = arboard::Clipboard::new() {
-                        let write_ok = match item {
-                            ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
-                            ClipItem::Image { filename, .. } => {
-                                if let Ok((w, h, data)) = storage::load_image(&filename) {
-                                    let img_data = arboard::ImageData {
-                                        width: w as usize,
-                                        height: h as usize,
-                                        bytes: std::borrow::Cow::Owned(data),
-                                    };
-                                    cb.set_image(img_data).is_ok()
-                                } else {
-                                    false
-                                }
+        // Handle paste requests from popup via IPC (event-driven, no filesystem polling)
+        if let Some(ref rx) = ipc_rx {
+            while let Ok(item) = rx.try_recv() {
+                if let Ok(mut cb) = arboard::Clipboard::new() {
+                    let write_ok = match item {
+                        ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
+                        ClipItem::Image { filename, .. } => {
+                            if let Ok((w, h, data)) = storage::load_image(&filename) {
+                                let img_data = arboard::ImageData {
+                                    width: w as usize,
+                                    height: h as usize,
+                                    bytes: std::borrow::Cow::Owned(data),
+                                };
+                                cb.set_image(img_data).is_ok()
+                            } else {
+                                false
                             }
-                        };
-                        if write_ok && config.general.auto_paste {
-                            std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
-                            let _ = std::process::Command::new("xdotool")
-                                .args(["key", "ctrl+v"])
-                                .status();
                         }
+                    };
+                    if write_ok && config.general.auto_paste {
+                        std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
+                        let _ = std::process::Command::new("xdotool")
+                            .args(["key", "ctrl+v"])
+                            .status();
                     }
                 }
             }
@@ -173,12 +185,12 @@ fn run_daemon() {
                 if let Some(raw) = monitor.poll() {
                     let item = match raw {
                         ClipItem::Image {
-                            data: Some(ref bytes),
+                            data: Some(bytes),
                             width,
                             height,
                             timestamp,
                             ..
-                        } => match storage::save_image(bytes, width, height) {
+                        } => match storage::save_image_owned(bytes, width, height) {
                             Ok(filename) => ClipItem::Image {
                                 width,
                                 height,
