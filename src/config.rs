@@ -128,6 +128,8 @@ impl Default for FooterConfig {
 pub struct Config {
     pub general: GeneralConfig,
     pub footer: FooterConfig,
+    #[serde(skip)]
+    pub parse_error: Option<String>,
 }
 
 impl Default for Config {
@@ -135,6 +137,7 @@ impl Default for Config {
         Self {
             general: GeneralConfig::default(),
             footer: FooterConfig::default(),
+            parse_error: None,
         }
     }
 }
@@ -163,7 +166,14 @@ impl Config {
     pub fn load() -> Self {
         let path = Self::config_path();
         if path.exists() {
-            Self::load_from_path(&path).unwrap_or_default()
+            match Self::load_from_path(&path) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    let mut cfg = Self::default();
+                    cfg.parse_error = Some(format!("Failed to read config file: {}", e));
+                    cfg
+                }
+            }
         } else {
             let cfg = Self::default();
             let _ = cfg.save();
@@ -173,9 +183,19 @@ impl Config {
 
     pub fn load_from_path(path: &Path) -> std::io::Result<Self> {
         let text = std::fs::read_to_string(path)?;
-        let mut cfg = toml::from_str::<Self>(&text).unwrap_or_default();
-        cfg.sanitize();
-        Ok(cfg)
+        match toml::from_str::<Self>(&text) {
+            Ok(mut cfg) => {
+                cfg.sanitize();
+                Ok(cfg)
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                eprintln!("Warning: Failed to parse config file: {}. Using default settings.", err_msg);
+                let mut cfg = Self::default();
+                cfg.parse_error = Some(err_msg);
+                Ok(cfg)
+            }
+        }
     }
 
     pub fn save(&self) -> std::io::Result<()> {
@@ -214,7 +234,7 @@ impl Config {
         }
         let theme = self.general.theme.to_lowercase();
         self.general.theme = match theme.as_str() {
-            "light" | "system" => theme,
+            "light" | "nord" | "catppuccin" | "dracula" | "system" => theme,
             _ => "dark".to_string(),
         };
     }
@@ -276,5 +296,15 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.popup_height, 360.0);
         assert_eq!(cfg.general.preview_chars, 20);
         assert_eq!(cfg.general.theme, "dark");
+    }
+
+    #[test]
+    fn new_themes_are_preserved() {
+        for theme in &["nord", "catppuccin", "dracula", "light", "system"] {
+            let mut cfg = Config::default();
+            cfg.general.theme = theme.to_string();
+            cfg.sanitize();
+            assert_eq!(cfg.general.theme, theme.to_string());
+        }
     }
 }

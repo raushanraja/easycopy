@@ -120,6 +120,134 @@ impl ThemeColors {
         }
     }
 
+    pub fn nord() -> Self {
+        let polar_night_0 = egui::Color32::from_rgb(46, 52, 64);
+        let polar_night_1 = egui::Color32::from_rgb(59, 66, 82);
+        let polar_night_2 = egui::Color32::from_rgb(67, 76, 94);
+        let polar_night_3 = egui::Color32::from_rgb(76, 86, 106);
+        let frost_7 = egui::Color32::from_rgb(143, 188, 187);
+        let frost_8 = egui::Color32::from_rgb(136, 192, 208);
+        let frost_9 = egui::Color32::from_rgb(129, 161, 193);
+        let frost_10 = egui::Color32::from_rgb(94, 129, 172);
+
+        Self {
+            window_bg: polar_night_0,
+            panel_bg: polar_night_0,
+            extreme_bg: polar_night_1,
+            widget_inactive_bg: polar_night_1,
+            widget_hovered_bg: polar_night_2,
+            widget_active_bg: polar_night_3,
+            widget_border: polar_night_2,
+            selection_bg: frost_10,
+            selection_stroke: frost_8,
+            card_bg: polar_night_0,
+            card_bg_hovered: polar_night_1,
+            card_bg_selected: polar_night_2,
+            card_stroke: polar_night_1,
+            card_stroke_selected: frost_8,
+            card_rounding: 12.0,
+            selection_bar: frost_8,
+            accent: frost_8,
+            accent_light: frost_7,
+            accent_dark: frost_9,
+            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_normal: polar_night_1,
+            badge_icon_color: frost_8,
+            icon_color_badge_normal: frost_8,
+            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(36, 41, 51, 230),
+            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(46, 52, 64, 200),
+            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+            lightbox_icon_hovered: egui::Color32::WHITE,
+            shortcut_color: egui::Color32::from_rgba_unmultiplied(216, 222, 233, 180),
+        }
+    }
+
+    pub fn catppuccin() -> Self {
+        let base = egui::Color32::from_rgb(30, 30, 46);
+        let mantle = egui::Color32::from_rgb(24, 24, 37);
+        let surface0 = egui::Color32::from_rgb(49, 50, 68);
+        let surface1 = egui::Color32::from_rgb(67, 76, 94);
+        let lavender = egui::Color32::from_rgb(180, 190, 254);
+        let mauve = egui::Color32::from_rgb(203, 166, 247);
+        let blue = egui::Color32::from_rgb(137, 180, 250);
+        let sapphire = egui::Color32::from_rgb(116, 199, 236);
+
+        Self {
+            window_bg: base,
+            panel_bg: base,
+            extreme_bg: mantle,
+            widget_inactive_bg: mantle,
+            widget_hovered_bg: surface0,
+            widget_active_bg: surface1,
+            widget_border: surface0,
+            selection_bg: blue,
+            selection_stroke: lavender,
+            card_bg: base,
+            card_bg_hovered: mantle,
+            card_bg_selected: surface0,
+            card_stroke: surface0,
+            card_stroke_selected: lavender,
+            card_rounding: 12.0,
+            selection_bar: lavender,
+            accent: lavender,
+            accent_light: mauve,
+            accent_dark: sapphire,
+            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_normal: mantle,
+            badge_icon_color: lavender,
+            icon_color_badge_normal: lavender,
+            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(17, 17, 27, 230),
+            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 30, 46, 200),
+            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+            lightbox_icon_hovered: egui::Color32::WHITE,
+            shortcut_color: egui::Color32::from_rgba_unmultiplied(205, 214, 244, 180),
+        }
+    }
+
+    pub fn dracula() -> Self {
+        let background = egui::Color32::from_rgb(40, 42, 54);
+        let current_line = egui::Color32::from_rgb(68, 71, 90);
+        let comment = egui::Color32::from_rgb(98, 114, 164);
+        let purple = egui::Color32::from_rgb(189, 147, 249);
+        let pink = egui::Color32::from_rgb(255, 121, 198);
+        let green = egui::Color32::from_rgb(80, 250, 123);
+        let cyan = egui::Color32::from_rgb(139, 233, 253);
+
+        Self {
+            window_bg: background,
+            panel_bg: background,
+            extreme_bg: current_line,
+            widget_inactive_bg: current_line,
+            widget_hovered_bg: egui::Color32::from_rgb(90, 93, 115),
+            widget_active_bg: comment,
+            widget_border: comment,
+            selection_bg: purple,
+            selection_stroke: green,
+            card_bg: background,
+            card_bg_hovered: current_line,
+            card_bg_selected: egui::Color32::from_rgb(50, 52, 67),
+            card_stroke: current_line,
+            card_stroke_selected: purple,
+            card_rounding: 12.0,
+            selection_bar: purple,
+            accent: purple,
+            accent_light: pink,
+            accent_dark: cyan,
+            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_normal: current_line,
+            badge_icon_color: purple,
+            icon_color_badge_normal: purple,
+            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(20, 21, 28, 230),
+            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(40, 42, 54, 200),
+            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+            lightbox_icon_hovered: egui::Color32::WHITE,
+            shortcut_color: egui::Color32::from_rgba_unmultiplied(248, 248, 242, 180),
+        }
+    }
+
     /// Return the theme palette based on config, or `None` if theming is disabled.
     pub fn from_config(config: &Config) -> Option<Self> {
         if !config.general.enable_theming {
@@ -127,6 +255,9 @@ impl ThemeColors {
         }
         Some(match config.general.theme.as_str() {
             "light" => Self::light(),
+            "nord" => Self::nord(),
+            "catppuccin" => Self::catppuccin(),
+            "dracula" => Self::dracula(),
             _ => Self::dark(),
         })
     }
@@ -141,38 +272,30 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: b
         return;
     }
 
+    let colors = match theme {
+        "light" => ThemeColors::light(),
+        "nord" => ThemeColors::nord(),
+        "catppuccin" => ThemeColors::catppuccin(),
+        "dracula" => ThemeColors::dracula(),
+        _ => ThemeColors::dark(),
+    };
+
     let mut visuals = if theme == "light" {
         egui::Visuals::light()
     } else {
         egui::Visuals::dark()
     };
 
-    if theme == "light" {
-        visuals.window_fill = egui::Color32::from_rgb(248, 250, 252); // Slate 50
-        visuals.panel_fill = egui::Color32::from_rgb(248, 250, 252);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(241, 245, 249); // Slate 100
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(241, 245, 249);
-        visuals.widgets.noninteractive.bg_stroke =
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(226, 232, 240)); // Slate 200
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(241, 245, 249);
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(226, 232, 240);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(203, 213, 225);
-        visuals.selection.bg_fill = egui::Color32::from_rgb(79, 70, 229); // Indigo 600
-        visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(99, 102, 241));
-    } else {
-        visuals.window_fill = egui::Color32::from_rgb(11, 15, 25); // Slate 950
-        visuals.panel_fill = egui::Color32::from_rgb(11, 15, 25);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(20, 26, 38); // Slate 900
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(20, 26, 38);
-        visuals.widgets.noninteractive.bg_stroke =
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(33, 41, 54)); // Slate 800
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(20, 26, 38);
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(28, 35, 51);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(51, 65, 85);
-        visuals.selection.bg_fill = egui::Color32::from_rgb(79, 70, 229); // Indigo 600
-        visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(129, 140, 248));
-        // Indigo 400
-    }
+    visuals.window_fill = colors.window_bg;
+    visuals.panel_fill = colors.panel_bg;
+    visuals.extreme_bg_color = colors.extreme_bg;
+    visuals.widgets.noninteractive.bg_fill = colors.widget_inactive_bg;
+    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.widget_border);
+    visuals.widgets.inactive.bg_fill = colors.widget_inactive_bg;
+    visuals.widgets.hovered.bg_fill = colors.widget_hovered_bg;
+    visuals.widgets.active.bg_fill = colors.widget_active_bg;
+    visuals.selection.bg_fill = colors.selection_bg;
+    visuals.selection.stroke = egui::Stroke::new(1.0, colors.selection_stroke);
 
     visuals.window_rounding = egui::Rounding::same(16.0);
     ctx.set_visuals(visuals);
