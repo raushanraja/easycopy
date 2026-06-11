@@ -801,6 +801,54 @@ pub fn paint_image_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color3
     painter.line_segment([p4, p5], stroke);
 }
 
+pub fn paint_app_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.5, color);
+
+    // Application window icon: a rounded rectangle with a title bar
+    let inner = rect.shrink2(egui::vec2(1.5, 1.5));
+    if inner.width() < 4.0 || inner.height() < 4.0 {
+        return;
+    }
+
+    // Main window body (rectangle with small rounding)
+    painter.rect(
+        inner,
+        egui::Rounding::same(2.5),
+        egui::Color32::TRANSPARENT,
+        stroke,
+    );
+
+    // Title bar line (across the top portion)
+    let title_y = inner.top() + inner.height() * 0.35;
+    painter.line_segment(
+        [egui::pos2(inner.left() + 2.5, title_y), egui::pos2(inner.right() - 2.5, title_y)],
+        stroke,
+    );
+
+    // Title bar dot (close button)
+    let dot_center = egui::pos2(inner.left() + 4.5, inner.top() + 3.5);
+    painter.circle_filled(dot_center, 1.8, color);
+
+    // Content area small line (like a content preview)
+    let content_y1 = title_y + inner.height() * 0.2;
+    let content_y2 = title_y + inner.height() * 0.45;
+    painter.line_segment(
+    [
+        egui::pos2(inner.left() + 4.0, content_y1),
+        egui::pos2(inner.right() - 4.0, content_y1),
+    ],
+        egui::Stroke::new(1.0, color),
+    );
+    painter.line_segment(
+    [
+        egui::pos2(inner.left() + 4.0, content_y2),
+        egui::pos2(inner.right() - 4.0, content_y2),
+    ],
+        egui::Stroke::new(1.0, color),
+    );
+}
+
 pub fn paint_trash_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
     let painter = ui.painter();
     let stroke = egui::Stroke::new(1.5, color);
@@ -1042,6 +1090,7 @@ pub fn draw_icon_badge(
     match icon_type {
         "text" => paint_text_icon(ui, icon_rect, icon_color),
         "image" => paint_image_icon(ui, icon_rect, icon_color),
+        "application" => paint_app_icon(ui, icon_rect, icon_color),
         _ => {}
     }
 }

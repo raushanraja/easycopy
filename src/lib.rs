@@ -1,5 +1,6 @@
 pub mod clipboard;
 pub mod config;
+pub mod desktop;
 pub mod history;
 pub mod hotkey;
 pub mod ipc;

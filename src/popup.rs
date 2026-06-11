@@ -1,10 +1,21 @@
 use crate::config::Config;
+use crate::desktop::DesktopApp;
 use crate::history::ClipItem;
 use crate::storage;
 use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+// ================================================================
+//  DisplayItem — unified list entry for clips and apps
+// ================================================================
+
+#[derive(Debug, Clone)]
+enum DisplayItem {
+    Clip { clip_idx: usize },
+    App  { app_idx: usize },
+}
 
 const SEARCH_HINT: &str = "Search clips, image size, or filename…";
 const FOOTER_HELP: &str =
@@ -113,11 +124,13 @@ fn simulate_paste() {
 }
 
 struct PopupApp {
-    all: Vec<ClipItem>,
-    filtered: Vec<usize>,
+    clips: Vec<ClipItem>,
+    apps: Vec<DesktopApp>,
+    filtered: Vec<DisplayItem>,
     query: String,
     selected: usize,
     textures: HashMap<String, egui::TextureHandle>,
+    app_icon_textures: HashMap<String, egui::TextureHandle>,
     should_paste: Arc<AtomicBool>,
     selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     preview_chars: usize,
@@ -130,10 +143,13 @@ struct PopupApp {
     lightbox_pan: egui::Vec2,
     focused_once: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
-    cached_char_counts: Vec<usize>,
-    cached_previews: Vec<String>,
-    cached_search: Vec<String>,
-    cached_file_sizes: HashMap<String, u64>,
+    app_rx: std::sync::mpsc::Receiver<Vec<DesktopApp>>,
+    apps_loaded: bool,
+    cached_clip_char_counts: Vec<usize>,
+    cached_clip_previews: Vec<String>,
+    cached_clip_search: Vec<String>,
+    cached_clip_file_sizes: HashMap<String, u64>,
+    cached_app_search: Vec<String>,
 }
 
 impl PopupApp {
@@ -143,13 +159,18 @@ impl PopupApp {
         should_paste: Arc<AtomicBool>,
         selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     ) -> Self {
-        let all: Vec<ClipItem> = storage::load_history().into_iter().collect();
-        let filtered: Vec<usize> = (0..all.len()).collect();
+        let clips: Vec<ClipItem> = storage::load_history().into_iter().collect();
 
+        // Initial filtered list: clips only (apps load async via channel)
+        let filtered: Vec<DisplayItem> = (0..clips.len())
+            .map(|clip_idx| DisplayItem::Clip { clip_idx })
+            .collect();
+
+        // ── Async image thumbnail loading (same as before) ──
         let (tx, rx) = std::sync::mpsc::channel();
-        let all_cloned = all.clone();
+        let clips_cloned = clips.clone();
         std::thread::spawn(move || {
-            for item in all_cloned {
+            for item in clips_cloned {
                 if let ClipItem::Image { filename, .. } = item {
                     if filename.is_empty() {
                         continue;
@@ -181,8 +202,15 @@ impl PopupApp {
             }
         });
 
+        // ── Async desktop app loading ──
+        let (app_tx, app_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let apps = crate::desktop::load_desktop_apps();
+            let _ = app_tx.send(apps);
+        });
+
         // Pre-compute caches to avoid per-frame allocations in the render loop
-        let cached_char_counts: Vec<usize> = all
+        let cached_clip_char_counts: Vec<usize> = clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => content.chars().count(),
@@ -190,7 +218,7 @@ impl PopupApp {
             })
             .collect();
 
-        let cached_previews: Vec<String> = all
+        let cached_clip_previews: Vec<String> = clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => {
@@ -200,7 +228,7 @@ impl PopupApp {
             })
             .collect();
 
-        let cached_search: Vec<String> = all
+        let cached_clip_search: Vec<String> = clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => content.to_lowercase(),
@@ -217,12 +245,12 @@ impl PopupApp {
             })
             .collect();
 
-        let mut cached_file_sizes = HashMap::new();
-        for item in &all {
+        let mut cached_clip_file_sizes = HashMap::new();
+        for item in &clips {
             if let ClipItem::Image { filename, .. } = item {
                 if !filename.is_empty() {
                     if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
-                        cached_file_sizes.insert(filename.clone(), meta.len());
+                        cached_clip_file_sizes.insert(filename.clone(), meta.len());
                     }
                 }
             }
@@ -231,11 +259,13 @@ impl PopupApp {
         let theme_colors = ThemeColors::from_config(&config);
 
         Self {
-            all,
+            clips,
+            apps: Vec::new(),
             filtered,
             query: String::new(),
             selected: 0,
             textures: HashMap::new(),
+            app_icon_textures: HashMap::new(),
             should_paste,
             selected_item_out,
             preview_chars: config.general.preview_chars,
@@ -248,10 +278,13 @@ impl PopupApp {
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
             rx,
-            cached_char_counts,
-            cached_previews,
-            cached_search,
-            cached_file_sizes,
+            app_rx,
+            apps_loaded: false,
+            cached_clip_char_counts,
+            cached_clip_previews,
+            cached_clip_search,
+            cached_clip_file_sizes,
+            cached_app_search: Vec::new(),
         }
     }
 
@@ -280,12 +313,24 @@ impl PopupApp {
 
     fn apply_filter(&mut self) {
         let q = self.query.trim().to_lowercase();
-        let filtered: Vec<usize> = self
-            .cached_search
+        let filtered: Vec<DisplayItem> = self
+            .clips
             .iter()
             .enumerate()
-            .filter(|(_, s)| q.is_empty() || s.contains(q.as_str()))
-            .map(|(i, _)| i)
+            .filter_map(|(i, _)| {
+                if q.is_empty() || self.cached_clip_search[i].contains(q.as_str()) {
+                    Some(DisplayItem::Clip { clip_idx: i })
+                } else {
+                    None
+                }
+            })
+            .chain(self.apps.iter().enumerate().filter_map(|(i, _app)| {
+                if q.is_empty() || self.cached_app_search[i].contains(q.as_str()) {
+                    Some(DisplayItem::App { app_idx: i })
+                } else {
+                    None
+                }
+            }))
             .collect();
         self.filtered = filtered;
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
@@ -294,8 +339,8 @@ impl PopupApp {
 
     /// Recompute all per-item caches after the item list changes.
     fn rebuild_caches(&mut self) {
-        self.cached_char_counts = self
-            .all
+        self.cached_clip_char_counts = self
+            .clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => content.chars().count(),
@@ -303,8 +348,8 @@ impl PopupApp {
             })
             .collect();
 
-        self.cached_previews = self
-            .all
+        self.cached_clip_previews = self
+            .clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => preview_text(content, self.preview_chars),
@@ -312,8 +357,8 @@ impl PopupApp {
             })
             .collect();
 
-        self.cached_search = self
-            .all
+        self.cached_clip_search = self
+            .clips
             .iter()
             .map(|item| match item {
                 ClipItem::Text { content, .. } => content.to_lowercase(),
@@ -330,16 +375,30 @@ impl PopupApp {
             })
             .collect();
 
-        self.cached_file_sizes.clear();
-        for item in &self.all {
+        self.cached_clip_file_sizes.clear();
+        for item in &self.clips {
             if let ClipItem::Image { filename, .. } = item {
-                if !filename.is_empty() && !self.cached_file_sizes.contains_key(filename) {
+                if !filename.is_empty() && !self.cached_clip_file_sizes.contains_key(filename) {
                     if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
-                        self.cached_file_sizes.insert(filename.clone(), meta.len());
+                        self.cached_clip_file_sizes
+                            .insert(filename.clone(), meta.len());
                     }
                 }
             }
         }
+
+        self.cached_app_search = self
+            .apps
+            .iter()
+            .map(|app| {
+                format!(
+                    "{} {} {}",
+                    app.name.to_lowercase(),
+                    app.comment.to_lowercase(),
+                    app.exec.to_lowercase()
+                )
+            })
+            .collect();
     }
 
     fn move_selection_down(&mut self) {
@@ -357,60 +416,92 @@ impl PopupApp {
     }
 
     fn select_and_close(&self, ctx: &egui::Context) {
-        if let Some(item) = self.selected_item() {
+        if let Some(item) = self.selected_clip() {
             if let Ok(mut out) = self.selected_item_out.lock() {
                 *out = Some(item.clone());
             }
             self.should_paste.store(true, Ordering::Relaxed);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
+            // Launch app, keep popup open
+            if let Some(app) = self.apps.get(*app_idx) {
+                let exec = app.exec.clone();
+                std::thread::spawn(move || {
+                    let _ = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&exec)
+                        .spawn();
+                });
+            }
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
+    fn launch_selected_app(&self) {
+        if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
+            if let Some(app) = self.apps.get(*app_idx) {
+                let exec = app.exec.clone();
+                std::thread::spawn(move || {
+                    let _ = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&exec)
+                        .spawn();
+                });
+            }
+        }
     }
 
     fn selected_item(&self) -> Option<&ClipItem> {
-        self.filtered
-            .get(self.selected)
-            .and_then(|idx| self.all.get(*idx))
+        self.selected_clip()
+    }
+
+    fn selected_clip(&self) -> Option<&ClipItem> {
+        if let Some(DisplayItem::Clip { clip_idx }) = self.filtered.get(self.selected) {
+            self.clips.get(*clip_idx)
+        } else {
+            None
+        }
     }
 
     fn delete_current(&mut self) {
-        let Some(&orig_idx) = self.filtered.get(self.selected) else {
-            return;
+        let Some(DisplayItem::Clip { clip_idx }) = self.filtered.get(self.selected) else {
+            return; // apps can't be deleted
         };
+        let orig_idx = *clip_idx;
 
-        if let Some(ClipItem::Image { filename, .. }) = self.all.get(orig_idx) {
+        if let Some(ClipItem::Image { filename, .. }) = self.clips.get(orig_idx) {
             if !filename.is_empty() {
                 storage::delete_image_file(filename);
                 self.textures.remove(filename);
             }
         }
 
-        self.all.remove(orig_idx);
+        self.clips.remove(orig_idx);
         self.persist_all();
         self.rebuild_caches();
         self.apply_filter();
     }
 
     fn clear_history(&mut self) {
-        for item in &self.all {
+        for item in &self.clips {
             if let ClipItem::Image { filename, .. } = item {
                 if !filename.is_empty() {
                     storage::delete_image_file(filename);
                 }
             }
         }
-        self.all.clear();
+        self.clips.clear();
         self.query.clear();
         self.persist_all();
         self.textures.clear();
-        self.cached_char_counts.clear();
-        self.cached_previews.clear();
-        self.cached_search.clear();
-        self.cached_file_sizes.clear();
+        self.cached_clip_char_counts.clear();
+        self.cached_clip_previews.clear();
+        self.cached_clip_search.clear();
+        self.cached_clip_file_sizes.clear();
         self.apply_filter();
     }
 
     fn persist_all(&self) {
-        let items: VecDeque<ClipItem> = self.all.iter().cloned().collect();
+        let items: VecDeque<ClipItem> = self.clips.iter().cloned().collect();
         let _ = storage::save_history(&items);
     }
 
@@ -457,7 +548,7 @@ impl PopupApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let label_text = format!("{} / {}", self.filtered.len(), self.all.len());
+                    let label_text = format!("{} clips · {} apps", self.clips.len(), self.apps.len());
                     let label_width = 75.0;
                     let search_width = (ui.available_width() - label_width - 8.0).max(100.0);
 
@@ -553,7 +644,7 @@ impl PopupApp {
             .inner_margin(egui::Margin::symmetric(20.0, 6.0))
             .show(ui, |ui| {
                 let weak_color = self.weak_color(ui);
-                if self.all.is_empty() {
+                if self.clips.is_empty() && self.apps.is_empty() {
                     draw_empty_state(
                         ui,
                         "No clips yet",
@@ -575,14 +666,13 @@ impl PopupApp {
                         ui.spacing_mut().item_spacing.y = 8.0;
                         ui.set_width(ui.available_width());
                         for row in 0..self.filtered.len() {
-                            let orig_idx = self.filtered[row];
-                            let Some(item) = self.all.get(orig_idx).cloned() else {
-                                continue;
-                            };
-                            if self.draw_row(ui, row, orig_idx, item) {
+                            if self.draw_display_row(ui, row) {
                                 self.selected = row;
-                                self.select_and_close(ui.ctx());
-                                break;
+                                // Only close popup if a clip was selected (apps keep popup open)
+                                if matches!(self.filtered[row], DisplayItem::Clip { .. }) {
+                                    self.select_and_close(ui.ctx());
+                                    break;
+                                }
                             }
                         }
                     });
@@ -607,7 +697,7 @@ impl PopupApp {
 
                         if self.config.footer.show_clear {
                             // Clear History Button (icon-only)
-                            let enabled = !self.all.is_empty();
+                            let enabled = !self.clips.is_empty();
                             let clear_btn_rect = ui
                                 .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
                                 .0;
@@ -996,7 +1086,30 @@ impl PopupApp {
             });
     }
 
-    fn draw_row(&mut self, ui: &mut egui::Ui, row: usize, orig_idx: usize, item: ClipItem) -> bool {
+    fn draw_display_row(&mut self, ui: &mut egui::Ui, row: usize) -> bool {
+        match self.filtered[row] {
+            DisplayItem::Clip { clip_idx } => {
+                let Some(item) = self.clips.get(clip_idx).cloned() else {
+                    return false;
+                };
+                self.draw_clip_row(ui, row, clip_idx, item)
+            }
+            DisplayItem::App { app_idx } => {
+                let Some(app) = self.apps.get(app_idx).cloned() else {
+                    return false;
+                };
+                self.draw_app_row(ui, row, app_idx, app)
+            }
+        }
+    }
+
+    fn draw_clip_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: usize,
+        orig_idx: usize,
+        item: ClipItem,
+    ) -> bool {
         let is_selected = row == self.selected;
         let row_height = match &item {
             ClipItem::Image { .. } => 84.0,
@@ -1078,187 +1191,338 @@ impl PopupApp {
                             .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
                     );
                 }
-                match &item {
-                    ClipItem::Text { content, timestamp } => {
-                        ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
-                            ui.with_layout(
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    theme::draw_icon_badge(
-                                        ui,
-                                        "text",
-                                        is_selected,
-                                        self.theme_colors.as_ref(),
-                                    );
-                                    ui.add_space(8.0);
 
-                                    let available_width = (ui.available_width() - 40.0).max(120.0);
-                                    ui.allocate_ui(
-                                        egui::vec2(available_width, row_height - 20.0),
-                                        |ui| {
-                                            ui.vertical(|ui| {
-                                                let content_height = 35.0;
-                                                let available_h = ui.available_height();
-                                                if available_h > content_height {
-                                                    ui.add_space(
-                                                        (available_h - content_height) / 2.0,
-                                                    );
-                                                }
-                                                ui.set_width(available_width);
-                                                let preview = self
-                                                    .cached_previews
-                                                    .get(orig_idx)
-                                                    .cloned()
-                                                    .unwrap_or_else(|| {
-                                                        preview_text(content, self.preview_chars)
-                                                    });
-                                                ui.add(
-                                                    egui::Label::new(
-                                                        egui::RichText::new(preview)
-                                                            .size(15.0)
-                                                            .monospace()
-                                                            .strong(),
-                                                    )
-                                                    .truncate(),
-                                                );
-                                                ui.add_space(2.0);
-                                                let char_count = self
-                                                    .cached_char_counts
-                                                    .get(orig_idx)
-                                                    .copied()
-                                                    .unwrap_or_else(|| content.chars().count());
-                                                ui.label(
-                                                    egui::RichText::new(format!(
-                                                        "{} chars · {}",
-                                                        char_count,
-                                                        relative_time(*timestamp)
-                                                    ))
-                                                    .size(12.5)
-                                                    .color(self.weak_color(ui)),
-                                                );
-                                            });
-                                        },
-                                    );
+                self.draw_clip_row_inner(ui, row, orig_idx, item, is_selected, row_height);
+            });
 
-                                    if row < 9 {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                let shortcut_color = if is_selected {
-                                                    self.theme_colors.as_ref().map_or(
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            255, 255, 255, 180,
-                                                        ),
-                                                        |t| t.shortcut_color,
-                                                    )
-                                                } else {
-                                                    self.weak_color(ui)
-                                                };
-                                                ui.label(
-                                                    egui::RichText::new(format!("^{}", row + 1))
-                                                        .size(13.0)
-                                                        .monospace()
-                                                        .color(shortcut_color),
-                                                );
-                                            },
-                                        );
+        response.clicked()
+    }
+
+    fn draw_clip_row_inner(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: usize,
+        orig_idx: usize,
+        item: ClipItem,
+        is_selected: bool,
+        row_height: f32,
+    ) {
+        match &item {
+            ClipItem::Text { content, timestamp } => {
+                ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        theme::draw_icon_badge(
+                            ui,
+                            "text",
+                            is_selected,
+                            self.theme_colors.as_ref(),
+                        );
+                        ui.add_space(8.0);
+
+                        let available_width = (ui.available_width() - 40.0).max(120.0);
+                        ui.allocate_ui(
+                            egui::vec2(available_width, row_height - 20.0),
+                            |ui| {
+                                ui.vertical(|ui| {
+                                    let content_height = 35.0;
+                                    let available_h = ui.available_height();
+                                    if available_h > content_height {
+                                        ui.add_space((available_h - content_height) / 2.0);
                                     }
-                                },
-                            );
-                        });
-                    }
-                    ClipItem::Image {
-                        width,
-                        height,
-                        timestamp,
-                        filename,
-                        ..
-                    } => {
-                        ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
+                                    ui.set_width(available_width);
+                                    let preview = self
+                                        .cached_clip_previews
+                                        .get(orig_idx)
+                                        .cloned()
+                                        .unwrap_or_else(|| {
+                                            preview_text(content, self.preview_chars)
+                                        });
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(preview)
+                                                .size(15.0)
+                                                .monospace()
+                                                .strong(),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.add_space(2.0);
+                                    let char_count = self
+                                        .cached_clip_char_counts
+                                        .get(orig_idx)
+                                        .copied()
+                                        .unwrap_or_else(|| content.chars().count());
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} chars · {}",
+                                            char_count,
+                                            relative_time(*timestamp)
+                                        ))
+                                        .size(12.5)
+                                        .color(self.weak_color(ui)),
+                                    );
+                                });
+                            },
+                        );
+
+                        if row < 9 {
                             ui.with_layout(
-                                egui::Layout::left_to_right(egui::Align::Center),
+                                egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if let Some(tex) = self.textures.get(filename) {
-                                        let img = egui::Image::new(tex)
-                                            .max_size(egui::vec2(36.0, 36.0))
-                                            .rounding(egui::Rounding::same(6.0));
-                                        ui.add(img);
+                                    let shortcut_color = if is_selected {
+                                        self.theme_colors.as_ref().map_or(
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                255, 255, 255, 180,
+                                            ),
+                                            |t| t.shortcut_color,
+                                        )
                                     } else {
-                                        theme::draw_icon_badge(
-                                            ui,
-                                            "image",
-                                            is_selected,
-                                            self.theme_colors.as_ref(),
-                                        );
-                                    }
-                                    ui.add_space(12.0);
-
-                                    let available_width = (ui.available_width() - 40.0).max(120.0);
-                                    ui.allocate_ui(
-                                        egui::vec2(available_width, row_height - 20.0),
-                                        |ui| {
-                                            ui.vertical(|ui| {
-                                                let content_height = 35.0;
-                                                let available_h = ui.available_height();
-                                                if available_h > content_height {
-                                                    ui.add_space(
-                                                        (available_h - content_height) / 2.0,
-                                                    );
-                                                }
-                                                ui.set_width(available_width);
-                                                ui.add(
-                                                    egui::Label::new(
-                                                        egui::RichText::new(format!(
-                                                            "Image {}×{}",
-                                                            width, height
-                                                        ))
-                                                        .size(15.0)
-                                                        .strong(),
-                                                    )
-                                                    .truncate(),
-                                                );
-                                                ui.add_space(2.0);
-                                                let file_size =
-                                                    self.cached_file_sizes.get(filename).copied();
-                                                ui.label(
-                                                    egui::RichText::new(image_subtitle_cached(
-                                                        filename, *timestamp, file_size,
-                                                    ))
-                                                    .size(12.5)
-                                                    .color(self.weak_color(ui)),
-                                                );
-                                            });
-                                        },
+                                        self.weak_color(ui)
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(format!("^{}", row + 1))
+                                            .size(13.0)
+                                            .monospace()
+                                            .color(shortcut_color),
                                     );
-
-                                    if row < 9 {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(egui::Align::Center),
-                                            |ui| {
-                                                let shortcut_color = if is_selected {
-                                                    self.theme_colors.as_ref().map_or(
-                                                        egui::Color32::from_rgba_unmultiplied(
-                                                            255, 255, 255, 180,
-                                                        ),
-                                                        |t| t.shortcut_color,
-                                                    )
-                                                } else {
-                                                    self.weak_color(ui)
-                                                };
-                                                ui.label(
-                                                    egui::RichText::new(format!("^{}", row + 1))
-                                                        .size(13.0)
-                                                        .monospace()
-                                                        .color(shortcut_color),
-                                                );
-                                            },
-                                        );
-                                    }
                                 },
                             );
-                        });
-                    }
+                        }
+                    });
+                });
+            }
+            ClipItem::Image {
+                width,
+                height,
+                timestamp,
+                filename,
+                ..
+            } => {
+                ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        if let Some(tex) = self.textures.get(filename) {
+                            let img = egui::Image::new(tex)
+                                .max_size(egui::vec2(36.0, 36.0))
+                                .rounding(egui::Rounding::same(6.0));
+                            ui.add(img);
+                        } else {
+                            theme::draw_icon_badge(
+                                ui,
+                                "image",
+                                is_selected,
+                                self.theme_colors.as_ref(),
+                            );
+                        }
+                        ui.add_space(12.0);
+
+                        let available_width = (ui.available_width() - 40.0).max(120.0);
+                        ui.allocate_ui(
+                            egui::vec2(available_width, row_height - 20.0),
+                            |ui| {
+                                ui.vertical(|ui| {
+                                    let content_height = 35.0;
+                                    let available_h = ui.available_height();
+                                    if available_h > content_height {
+                                        ui.add_space((available_h - content_height) / 2.0);
+                                    }
+                                    ui.set_width(available_width);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!(
+                                                "Image {}×{}",
+                                                width, height
+                                            ))
+                                            .size(15.0)
+                                            .strong(),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.add_space(2.0);
+                                    let file_size = self
+                                        .cached_clip_file_sizes
+                                        .get(filename)
+                                        .copied();
+                                    ui.label(
+                                        egui::RichText::new(image_subtitle_cached(
+                                            filename, *timestamp, file_size,
+                                        ))
+                                        .size(12.5)
+                                        .color(self.weak_color(ui)),
+                                    );
+                                });
+                            },
+                        );
+
+                        if row < 9 {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let shortcut_color = if is_selected {
+                                        self.theme_colors.as_ref().map_or(
+                                            egui::Color32::from_rgba_unmultiplied(
+                                                255, 255, 255, 180,
+                                            ),
+                                            |t| t.shortcut_color,
+                                        )
+                                    } else {
+                                        self.weak_color(ui)
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(format!("^{}", row + 1))
+                                            .size(13.0)
+                                            .monospace()
+                                            .color(shortcut_color),
+                                    );
+                                },
+                            );
+                        }
+                    });
+                });
+            }
+        }
+    }
+
+    fn draw_app_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: usize,
+        app_idx: usize,
+        app: DesktopApp,
+    ) -> bool {
+        let is_selected = row == self.selected;
+        let row_height = 68.0;
+
+        let card_id = ui.make_persistent_id(format!("app_row_{}", row));
+        let rect = egui::Rect::from_min_size(
+            ui.next_widget_position(),
+            egui::vec2(ui.available_width(), row_height),
+        );
+        let response = ui.interact(rect, card_id, egui::Sense::click());
+
+        if is_selected && self.scroll_to_selected_once {
+            ui.scroll_to_rect(rect, Some(egui::Align::Center));
+            self.scroll_to_selected_once = false;
+        }
+
+        let theme = self.theme_colors.as_ref();
+
+        let fill = if is_selected {
+            theme.map_or_else(|| ui.visuals().selection.bg_fill, |t| t.card_bg_selected)
+        } else if response.hovered() {
+            theme.map_or_else(
+                || ui.visuals().widgets.hovered.bg_fill,
+                |t| t.card_bg_hovered,
+            )
+        } else {
+            theme.map_or_else(
+                || ui.visuals().widgets.noninteractive.bg_fill,
+                |t| t.card_bg,
+            )
+        };
+
+        let stroke = if is_selected {
+            theme.map_or_else(
+                || egui::Stroke::new(1.5, ui.visuals().selection.bg_fill),
+                |t| egui::Stroke::new(1.5, t.card_stroke_selected),
+            )
+        } else {
+            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+        };
+
+        let rounding = theme.map_or(0.0, |t| t.card_rounding);
+
+        egui::Frame::none()
+            .fill(fill)
+            .rounding(rounding)
+            .stroke(stroke)
+            .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_height(row_height - 20.0);
+
+                if is_selected && self.config.general.enable_theming {
+                    let bar_width = 4.0;
+                    let bar_height = 24.0;
+                    let bar_rect = egui::Rect::from_center_size(
+                        egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
+                        egui::vec2(bar_width, bar_height),
+                    );
+                    ui.painter().rect_filled(
+                        bar_rect,
+                        egui::Rounding::same(2.0),
+                        self.theme_colors
+                            .as_ref()
+                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
+                    );
                 }
+
+                ui.horizontal(|ui| {
+                    if let Some(ref icon_path) = app.icon_path {
+                        if let Some(tex) = self.app_icon_textures.get(icon_path) {
+                            ui.add(
+                                egui::Image::new(tex)
+                                    .max_size(egui::vec2(36.0, 36.0))
+                                    .rounding(egui::Rounding::same(6.0)),
+                            );
+                        } else if let Ok(img) = image::open(icon_path) {
+                            let rgba = img.to_rgba8();
+                            let ci = egui::ColorImage::from_rgba_unmultiplied(
+                                [rgba.width() as usize, rgba.height() as usize],
+                                rgba.as_raw(),
+                            );
+                            let tex = ui.ctx().load_texture(
+                                format!("app_{}", app_idx),
+                                ci,
+                                egui::TextureOptions::LINEAR,
+                            );
+                            self.app_icon_textures
+                                .insert(icon_path.clone(), tex.clone());
+                            ui.add(
+                                egui::Image::new(&tex)
+                                    .max_size(egui::vec2(36.0, 36.0))
+                                    .rounding(egui::Rounding::same(6.0)),
+                            );
+                        } else {
+                            theme::draw_icon_badge(
+                                ui,
+                                "application",
+                                is_selected,
+                                self.theme_colors.as_ref(),
+                            );
+                        }
+                    } else {
+                        theme::draw_icon_badge(
+                            ui,
+                            "application",
+                            is_selected,
+                            self.theme_colors.as_ref(),
+                        );
+                    }
+                    ui.add_space(8.0);
+
+                    ui.vertical(|ui| {
+                        ui.set_width((ui.available_width() - 40.0).max(120.0));
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&app.name)
+                                    .size(15.0)
+                                    .strong(),
+                            )
+                            .truncate(),
+                        );
+                        if !app.comment.is_empty() {
+                            ui.add_space(2.0);
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&app.comment)
+                                        .size(12.5)
+                                        .color(self.weak_color(ui)),
+                                )
+                                .truncate(),
+                            );
+                        }
+                    });
+                });
             });
 
         response.clicked()
@@ -1579,6 +1843,28 @@ impl eframe::App for PopupApp {
             ctx.request_repaint();
         }
 
+        // ── Async app loading: receive apps once they're done scanning ──
+        if !self.apps_loaded {
+            if let Ok(apps) = self.app_rx.try_recv() {
+                self.apps = apps;
+                self.cached_app_search = self
+                    .apps
+                    .iter()
+                    .map(|app| {
+                        format!(
+                            "{} {} {}",
+                            app.name.to_lowercase(),
+                            app.comment.to_lowercase(),
+                            app.exec.to_lowercase()
+                        )
+                    })
+                    .collect();
+                self.apps_loaded = true;
+                self.apply_filter();
+                ctx.request_repaint();
+            }
+        }
+
         if self.config.general.close_on_focus_out {
             let focused = ctx.input(|i| i.focused);
             if focused {
@@ -1645,23 +1931,28 @@ impl eframe::App for PopupApp {
             self.apply_filter();
         }
         if ctrl_o {
-            let target = if let Some((ref filename, _)) = self.preview_image {
-                Some(crate::opener::OpenTarget::Image(filename.clone()))
-            } else if let Some(&idx) = self.filtered.get(self.selected) {
-                match self.all.get(idx) {
-                    Some(ClipItem::Text { content, .. }) => {
+            if let Some((ref filename, _)) = self.preview_image {
+                let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
+            } else if let Some(item) = self.selected_clip() {
+                let target = match item {
+                    ClipItem::Text { content, .. } => {
                         Some(crate::opener::OpenTarget::Text(content.clone()))
                     }
-                    Some(ClipItem::Image { filename, .. }) => {
+                    ClipItem::Image { filename, .. } => {
                         Some(crate::opener::OpenTarget::Image(filename.clone()))
                     }
-                    None => None,
+                };
+                if let Some(t) = target {
+                    let _ = crate::opener::open_item(&t);
                 }
-            } else {
-                None
-            };
-            if let Some(t) = target {
-                let _ = crate::opener::open_item(&t);
+            } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
+                if let Some(app) = self.apps.get(*app_idx) {
+                    let exec = app.exec.clone();
+                    let _ = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&exec)
+                        .spawn();
+                }
             }
         }
         if let Some(digit) = select_digit {
