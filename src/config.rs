@@ -46,6 +46,18 @@ fn default_enable_clipping() -> bool {
 fn default_close_on_focus_out() -> bool {
     true
 }
+fn default_font_preset() -> String {
+    "default".to_string()
+}
+fn default_font_size() -> String {
+    "medium".to_string()
+}
+fn default_font_proportional_path() -> String {
+    String::new()
+}
+fn default_font_monospace_path() -> String {
+    String::new()
+}
 
 fn default_footer_enable() -> bool {
     true
@@ -82,6 +94,14 @@ pub struct GeneralConfig {
     pub enable_theming: bool,
     pub enable_clipping: bool,
     pub close_on_focus_out: bool,
+    /// Font preset: "default", "dejavu", "liberation", "fira", "jetbrains"
+    pub font_preset: String,
+    /// Font size: "small", "medium", "large"
+    pub font_size: String,
+    /// Custom proportional font file path (TTF/OTF)
+    pub font_proportional_path: String,
+    /// Custom monospace font file path (TTF/OTF)
+    pub font_monospace_path: String,
 }
 
 impl Default for GeneralConfig {
@@ -102,6 +122,10 @@ impl Default for GeneralConfig {
             enable_theming: default_enable_theming(),
             enable_clipping: default_enable_clipping(),
             close_on_focus_out: default_close_on_focus_out(),
+            font_preset: default_font_preset(),
+            font_size: default_font_size(),
+            font_proportional_path: default_font_proportional_path(),
+            font_monospace_path: default_font_monospace_path(),
         }
     }
 }
@@ -195,7 +219,10 @@ impl Config {
             }
             Err(e) => {
                 let err_msg = e.to_string();
-                eprintln!("Warning: Failed to parse config file: {}. Using default settings.", err_msg);
+                eprintln!(
+                    "Warning: Failed to parse config file: {}. Using default settings.",
+                    err_msg
+                );
                 let mut cfg = Self::default();
                 cfg.parse_error = Some(err_msg);
                 Ok(cfg)
@@ -242,6 +269,18 @@ impl Config {
             "light" | "nord" | "catppuccin" | "dracula" | "system" => theme,
             _ => "dark".to_string(),
         };
+
+        let font_preset = self.general.font_preset.to_lowercase();
+        self.general.font_preset = match font_preset.as_str() {
+            "dejavu" | "liberation" | "fira" | "jetbrains" => font_preset,
+            _ => "default".to_string(),
+        };
+
+        let font_size = self.general.font_size.to_lowercase();
+        self.general.font_size = match font_size.as_str() {
+            "small" | "large" => font_size,
+            _ => "medium".to_string(),
+        };
     }
 }
 
@@ -279,6 +318,10 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);
+        assert_eq!(cfg.general.font_preset, "default");
+        assert_eq!(cfg.general.font_size, "medium");
+        assert_eq!(cfg.general.font_proportional_path, "");
+        assert_eq!(cfg.general.font_monospace_path, "");
         assert_eq!(cfg.footer.enable, true);
         assert_eq!(cfg.footer.show_help, true);
         assert_eq!(cfg.footer.show_clear, true);

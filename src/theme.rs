@@ -279,59 +279,181 @@ impl ThemeColors {
 
 // ── egui theming ─────────────────────────────────────────────────
 
-/// Apply the configured theme (dark / light / system) and font sizes to
-/// the egui context.
-pub fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: bool) {
-    if !enable_theming {
+/// Font size values for each preset.
+fn font_size_values(size: &str) -> (f32, f32, f32, f32, f32) {
+    match size {
+        "small" => (19.0, 13.0, 11.5, 10.0, 12.0),
+        "large" => (25.0, 19.0, 17.5, 16.0, 18.0),
+        _ => (22.0, 16.0, 14.5, 13.0, 15.0), // medium
+    }
+}
+
+/// Find a font file by name in standard Linux font directories.
+fn find_font_file(filename: &str) -> Option<std::path::PathBuf> {
+    let mut dirs = vec![
+        std::path::PathBuf::from("/usr/share/fonts"),
+        std::path::PathBuf::from("/usr/local/share/fonts"),
+    ];
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(home.join(".fonts"));
+        dirs.push(home.join(".local/share/fonts"));
+    }
+
+    // Check top-level dirs and one level of subdirectories
+    for base in &dirs {
+        let direct = base.join(filename);
+        if direct.exists() {
+            return Some(direct);
+        }
+        if let Ok(entries) = std::fs::read_dir(base) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let candidate = path.join(filename);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve font file paths for a given preset name.
+/// Returns (proportional_path, monospace_path).
+fn resolve_font_paths(preset: &str) -> (Option<String>, Option<String>) {
+    match preset {
+        "dejavu" => (
+            find_font_file("DejaVuSans.ttf").map(|p| p.to_string_lossy().to_string()),
+            find_font_file("DejaVuSansMono.ttf").map(|p| p.to_string_lossy().to_string()),
+        ),
+        "liberation" => (
+            find_font_file("LiberationSans-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+            find_font_file("LiberationMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+        ),
+        "fira" => (
+            find_font_file("FiraSans-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+            find_font_file("FiraCode-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+        ),
+        "jetbrains" => (
+            find_font_file("JetBrainsMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+            find_font_file("JetBrainsMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
+        ),
+        _ => (None, None),
+    }
+}
+
+/// Load custom font files into the egui context based on the config.
+fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
+    let preset = config.general.font_preset.as_str();
+    if preset == "default"
+        && config.general.font_proportional_path.is_empty()
+        && config.general.font_monospace_path.is_empty()
+    {
         return;
     }
 
-    let colors = match theme {
-        "light" => ThemeColors::light(),
-        "nord" => ThemeColors::nord(),
-        "catppuccin" => ThemeColors::catppuccin(),
-        "dracula" => ThemeColors::dracula(),
-        _ => ThemeColors::dark(),
-    };
+    // Use explicitly configured paths, or fall back to auto-detected ones
+    let (auto_prop, auto_mono) = resolve_font_paths(preset);
 
-    let mut visuals = if theme == "light" {
-        egui::Visuals::light()
+    let prop_path = if !config.general.font_proportional_path.is_empty() {
+        Some(std::path::PathBuf::from(
+            &config.general.font_proportional_path,
+        ))
     } else {
-        egui::Visuals::dark()
+        auto_prop.map(std::path::PathBuf::from)
     };
 
-    visuals.window_fill = colors.window_bg;
-    visuals.panel_fill = colors.panel_bg;
-    visuals.extreme_bg_color = colors.extreme_bg;
-    visuals.widgets.noninteractive.bg_fill = colors.widget_inactive_bg;
-    visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.widget_border);
-    visuals.widgets.inactive.bg_fill = colors.widget_inactive_bg;
-    visuals.widgets.hovered.bg_fill = colors.widget_hovered_bg;
-    visuals.widgets.active.bg_fill = colors.widget_active_bg;
-    visuals.selection.bg_fill = colors.selection_bg;
-    visuals.selection.stroke = egui::Stroke::new(1.0, colors.selection_stroke);
+    let mono_path = if !config.general.font_monospace_path.is_empty() {
+        Some(std::path::PathBuf::from(
+            &config.general.font_monospace_path,
+        ))
+    } else {
+        auto_mono.map(std::path::PathBuf::from)
+    };
 
-    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
-    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
-    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(
-        1.0,
-        if theme == "light" {
+    if prop_path.is_none() && mono_path.is_none() {
+        return;
+    }
+
+    let mut fonts = egui::FontDefinitions::default();
+
+    if let Some(path) = &prop_path {
+        if let Ok(data) = std::fs::read(path) {
+            let name = format!("custom_prop_{}", preset);
+            fonts
+                .font_data
+                .insert(name.clone(), egui::FontData::from_owned(data));
+            fonts
+                .families
+                .get_mut(&egui::FontFamily::Proportional)
+                .unwrap()
+                .insert(0, name);
+        }
+    }
+
+    if let Some(path) = &mono_path {
+        if let Ok(data) = std::fs::read(path) {
+            let name = format!("custom_mono_{}", preset);
+            fonts
+                .font_data
+                .insert(name.clone(), egui::FontData::from_owned(data));
+        }
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+/// Apply the configured theme, fonts, and font sizes to the egui context.
+pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
+    // --- Theme visuals ---
+    if config.general.enable_theming {
+        let colors = match config.general.theme.as_str() {
+            "light" => ThemeColors::light(),
+            "nord" => ThemeColors::nord(),
+            "catppuccin" => ThemeColors::catppuccin(),
+            "dracula" => ThemeColors::dracula(),
+            _ => ThemeColors::dark(),
+        };
+
+        let mut visuals = if config.general.theme == "light" {
+            egui::Visuals::light()
+        } else {
+            egui::Visuals::dark()
+        };
+
+        visuals.window_fill = colors.window_bg;
+        visuals.panel_fill = colors.panel_bg;
+        visuals.extreme_bg_color = colors.extreme_bg;
+        visuals.widgets.noninteractive.bg_fill = colors.widget_inactive_bg;
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, colors.widget_border);
+        visuals.widgets.inactive.bg_fill = colors.widget_inactive_bg;
+        visuals.widgets.hovered.bg_fill = colors.widget_hovered_bg;
+        visuals.widgets.active.bg_fill = colors.widget_active_bg;
+        visuals.selection.bg_fill = colors.selection_bg;
+        visuals.selection.stroke = egui::Stroke::new(1.0, colors.selection_stroke);
+
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
+        let fg_hover = if config.general.theme == "light" {
             egui::Color32::BLACK
         } else {
             egui::Color32::WHITE
-        },
-    );
-    visuals.widgets.active.fg_stroke = egui::Stroke::new(
-        1.0,
-        if theme == "light" {
-            egui::Color32::BLACK
-        } else {
-            egui::Color32::WHITE
-        },
-    );
+        };
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, fg_hover);
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, fg_hover);
 
-    visuals.window_rounding = egui::Rounding::same(16.0);
-    ctx.set_visuals(visuals);
+        visuals.window_rounding = egui::Rounding::same(16.0);
+        ctx.set_visuals(visuals);
+    }
+
+    // --- Custom fonts ---
+    load_custom_fonts(ctx, config);
+
+    // --- Font sizes ---
+    let (h_size, b_size, btn_size, s_size, m_size) =
+        font_size_values(config.general.font_size.as_str());
 
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
@@ -341,19 +463,20 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: b
 
     style
         .text_styles
-        .insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
+        .insert(egui::TextStyle::Heading, egui::FontId::proportional(h_size));
     style
         .text_styles
-        .insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(b_size));
+    style.text_styles.insert(
+        egui::TextStyle::Button,
+        egui::FontId::proportional(btn_size),
+    );
     style
         .text_styles
-        .insert(egui::TextStyle::Button, egui::FontId::proportional(14.5));
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(s_size));
     style
         .text_styles
-        .insert(egui::TextStyle::Small, egui::FontId::proportional(13.0));
-    style
-        .text_styles
-        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(15.0));
+        .insert(egui::TextStyle::Monospace, egui::FontId::monospace(m_size));
 
     ctx.set_style(style);
 }
@@ -545,7 +668,7 @@ pub fn paint_palette_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Colo
 
     // Draw three small paint spots of different colors
     let dot_r = r * 0.15;
-    
+
     // Spot 1: Red
     let spot1 = center + egui::vec2(-r * 0.4, -r * 0.3);
     painter.circle_filled(spot1, dot_r, egui::Color32::from_rgb(239, 68, 68));
@@ -671,10 +794,7 @@ pub fn draw_icon_badge(
     );
 
     let bg_color = if is_selected {
-        theme.map_or_else(
-            || ui.visuals().extreme_bg_color,
-            |t| t.badge_bg_selected,
-        )
+        theme.map_or_else(|| ui.visuals().extreme_bg_color, |t| t.badge_bg_selected)
     } else {
         theme.map_or_else(
             || ui.visuals().widgets.noninteractive.bg_fill,
