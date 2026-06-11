@@ -17,6 +17,11 @@ fn default_enable_theming() -> bool { true }
 fn default_enable_clipping() -> bool { true }
 fn default_close_on_focus_out() -> bool { true }
 
+fn default_footer_enable() -> bool { true }
+fn default_footer_show_help() -> bool { true }
+fn default_footer_show_clear() -> bool { true }
+fn default_footer_show_settings() -> bool { true }
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct GeneralConfig {
@@ -62,13 +67,37 @@ impl Default for GeneralConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+pub struct FooterConfig {
+    pub enable: bool,
+    pub show_help: bool,
+    pub show_clear: bool,
+    pub show_settings: bool,
+}
+
+impl Default for FooterConfig {
+    fn default() -> Self {
+        Self {
+            enable: default_footer_enable(),
+            show_help: default_footer_show_help(),
+            show_clear: default_footer_show_clear(),
+            show_settings: default_footer_show_settings(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Config {
     pub general: GeneralConfig,
+    pub footer: FooterConfig,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { general: GeneralConfig::default() }
+        Self {
+            general: GeneralConfig::default(),
+            footer: FooterConfig::default(),
+        }
     }
 }
 
@@ -187,6 +216,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);
+        assert_eq!(cfg.general.show_footer, true);
     }
 
     #[test]

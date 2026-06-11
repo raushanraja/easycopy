@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const SEARCH_HINT: &str = "Search clips, image size, or filename…";
-const FOOTER_HELP: &str = "Esc close · ↑↓ navigate · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
+const FOOTER_HELP: &str = "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
 
 /// Entry point for the popup window. Blocks until the window is closed.
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
@@ -268,6 +268,36 @@ fn paint_trash_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
          egui::pos2(rect.center().x + 1.5, rect.bottom() - 2.0)],
         stroke
     );
+}
+
+fn paint_settings_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let center = rect.center();
+    let r_outer = rect.width() * 0.35;
+    let r_inner = rect.width() * 0.15;
+    let tooth_len = rect.width() * 0.12;
+    let stroke = egui::Stroke::new(1.5, color);
+
+    // Draw center hole
+    painter.circle_stroke(center, r_inner, stroke);
+
+    // Draw outer base ring
+    painter.circle_stroke(center, r_outer, stroke);
+
+    // Draw 8 teeth around the ring
+    let num_teeth = 8;
+    for i in 0..num_teeth {
+        let angle = (i as f32) * (2.0 * std::f32::consts::PI / (num_teeth as f32));
+        let cos = angle.cos();
+        let sin = angle.sin();
+
+        // Tooth base position on outer ring
+        let p_base = egui::pos2(center.x + r_outer * cos, center.y + r_outer * sin);
+        // Tooth tip position
+        let p_tip = egui::pos2(center.x + (r_outer + tooth_len) * cos, center.y + (r_outer + tooth_len) * sin);
+
+        painter.line_segment([p_base, p_tip], stroke);
+    }
 }
 
 fn paint_open_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
@@ -749,20 +779,20 @@ impl PopupApp {
         egui::Frame::none()
             .inner_margin(egui::Margin::symmetric(20.0, 12.0))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_centered(|ui| {
                     ui.label(egui::RichText::new(FOOTER_HELP).size(12.5).weak());
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Clear History Button (icon-only)
                         let enabled = !self.all.is_empty();
-
-                        let button_rect = ui.allocate_exact_size(egui::vec2(120.0, 32.0), egui::Sense::click()).0;
-                        let response = ui.interact(button_rect, ui.id().with("clear_history_btn"), egui::Sense::click());
+                        let clear_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
+                        let clear_resp = ui.interact(clear_btn_rect, ui.id().with("clear_history_btn"), egui::Sense::click());
 
                         let fill = if !enabled {
                             ui.visuals().widgets.noninteractive.bg_fill
-                        } else if response.clicked() {
+                        } else if clear_resp.clicked() {
                             ui.visuals().widgets.active.bg_fill
-                        } else if response.hovered() {
+                        } else if clear_resp.hovered() {
                             ui.visuals().widgets.hovered.bg_fill
                         } else {
                             ui.visuals().widgets.inactive.bg_fill
@@ -770,13 +800,13 @@ impl PopupApp {
 
                         let stroke = if !enabled {
                             ui.visuals().widgets.noninteractive.bg_stroke
-                        } else if response.hovered() {
+                        } else if clear_resp.hovered() {
                             ui.visuals().widgets.hovered.bg_stroke
                         } else {
                             ui.visuals().widgets.noninteractive.bg_stroke
                         };
 
-                        ui.painter().rect(button_rect, egui::Rounding::same(8.0), fill, stroke);
+                        ui.painter().rect(clear_btn_rect, egui::Rounding::same(8.0), fill, stroke);
 
                         let text_color = if !enabled {
                             ui.visuals().weak_text_color()
@@ -784,25 +814,51 @@ impl PopupApp {
                             ui.visuals().text_color()
                         };
 
-                        // Draw Icon via painter
                         let icon_rect = egui::Rect::from_center_size(
-                            egui::pos2(button_rect.left() + 18.0, button_rect.center().y),
+                            clear_btn_rect.center(),
                             egui::vec2(14.0, 14.0)
                         );
                         paint_trash_icon(ui, icon_rect, text_color);
 
-                        // Draw Text via painter
-                        let text_pos = egui::pos2(button_rect.left() + 32.0, button_rect.center().y);
-                        ui.painter().text(
-                            text_pos,
-                            egui::Align2::LEFT_CENTER,
-                            "Clear History",
-                            egui::FontId::proportional(13.0),
-                            text_color
-                        );
-
-                        if enabled && response.clicked() {
+                        if enabled && clear_resp.clicked() {
                             self.clear_history();
+                        }
+
+                        ui.add_space(8.0);
+
+                        // Settings Button (opens config)
+                        let settings_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
+                        let settings_resp = ui.interact(settings_btn_rect, ui.id().with("settings_btn"), egui::Sense::click());
+
+                        let settings_fill = if settings_resp.clicked() {
+                            ui.visuals().widgets.active.bg_fill
+                        } else if settings_resp.hovered() {
+                            ui.visuals().widgets.hovered.bg_fill
+                        } else {
+                            ui.visuals().widgets.inactive.bg_fill
+                        };
+
+                        let settings_stroke = if settings_resp.hovered() {
+                            ui.visuals().widgets.hovered.bg_stroke
+                        } else {
+                            ui.visuals().widgets.noninteractive.bg_stroke
+                        };
+
+                        ui.painter().rect(settings_btn_rect, egui::Rounding::same(8.0), settings_fill, settings_stroke);
+
+                        let settings_color = ui.visuals().text_color();
+
+                        let settings_icon_rect = egui::Rect::from_center_size(
+                            settings_btn_rect.center(),
+                            egui::vec2(16.0, 16.0)
+                        );
+                        paint_settings_icon(ui, settings_icon_rect, settings_color);
+
+                        if settings_resp.clicked() {
+                            let path = Config::config_path();
+                            let _ = std::process::Command::new("xdg-open")
+                                .arg(path)
+                                .spawn();
                         }
                     });
                 });
@@ -1362,12 +1418,17 @@ impl eframe::App for PopupApp {
                 .stroke(egui::Stroke::new(1.0, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
             )
             .show(ctx, |ui| {
+                if self.config.general.show_footer {
+                    egui::TopBottomPanel::bottom("footer_panel")
+                        .frame(egui::Frame::none())
+                        .show_inside(ui, |ui| {
+                            self.draw_footer(ui);
+                        });
+                }
                 ui.vertical(|ui| {
                     self.draw_header(ui);
                     self.draw_search(ui);
                     self.draw_body(ui);
-                    ui.add_space(6.0);
-                    self.draw_footer(ui);
                 });
                 self.draw_lightbox(ui);
             });
