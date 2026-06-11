@@ -278,7 +278,7 @@ impl Config {
 
         let font_preset = self.general.font_preset.to_lowercase();
         self.general.font_preset = match font_preset.as_str() {
-            "dejavu" | "liberation" | "fira" | "jetbrains" => font_preset,
+            "dejavu" | "liberation" | "fira" | "jetbrains" | "iosevka" => font_preset,
             _ => "default".to_string(),
         };
 

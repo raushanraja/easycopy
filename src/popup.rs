@@ -857,14 +857,21 @@ impl PopupApp {
                                         ),
                                     );
                                     ui.separator();
-                                    let font_presets =
-                                        ["default", "dejavu", "liberation", "fira", "jetbrains"];
+                                    let font_presets = [
+                                        "default",
+                                        "dejavu",
+                                        "liberation",
+                                        "fira",
+                                        "jetbrains",
+                                        "iosevka",
+                                    ];
                                     let display_names = [
                                         "System Default",
                                         "DejaVu",
                                         "Liberation",
                                         "Fira Code",
                                         "JetBrains Mono",
+                                        "Iosevka",
                                     ];
                                     for (i, f_name) in font_presets.iter().enumerate() {
                                         let available = f_name == &"default"

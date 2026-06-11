@@ -472,6 +472,29 @@ fn resolve_font_paths(preset: &str, weight: &str) -> (Option<String>, Option<Str
             ]);
             (mono.clone(), mono)
         }
+        "iosevka" => {
+            let prop = try_find(&[
+                format!("IosevkaNerdFontPropo-{}", w),
+                "IosevkaNerdFontPropo-Regular".into(),
+                "IosevkaNerdFont-Regular".into(),
+                "Iosevka-Regular".into(),
+                "Iosevka".into(),
+                "Iosevka Nerd Font Propo".into(),
+                "Iosevka NFP".into(),
+                "Iosevka Nerd Font".into(),
+                "Iosevka NF".into(),
+                "Iosevka".into(),
+            ]);
+            let mono = try_find(&[
+                format!("IosevkaNerdFontMono-{}", w),
+                "IosevkaNerdFontMono-Regular".into(),
+                "IosevkaMono-Regular".into(),
+                "IosevkaMono".into(),
+                "Iosevka Nerd Font Mono".into(),
+                "Iosevka NFM".into(),
+            ]);
+            (prop, mono)
+        }
         _ => (None, None),
     }
 }
@@ -486,7 +509,7 @@ pub fn is_font_preset_available(preset: &str) -> bool {
     let map = FONT_AVAILABILITY.get_or_init(|| {
         let mut m = HashMap::new();
         m.insert("default", true);
-        for &p in &["dejavu", "liberation", "fira", "jetbrains"] {
+        for &p in &["dejavu", "liberation", "fira", "jetbrains", "iosevka"] {
             let (prop, mono) = resolve_font_paths(p, "normal");
             m.insert(p, prop.is_some() || mono.is_some());
         }
@@ -499,7 +522,10 @@ pub fn is_font_preset_available(preset: &str) -> bool {
 fn log_font_diag(preset: &str, prop: &Option<String>, mono: &Option<String>) {
     match (prop, mono) {
         (Some(p), Some(m)) => {
-            eprintln!("[fonts] {} → proportional: {} | monospace: {}", preset, p, m)
+            eprintln!(
+                "[fonts] {} → proportional: {} | monospace: {}",
+                preset, p, m
+            )
         }
         (Some(p), None) => eprintln!("[fonts] {} → proportional: {} (no monospace)", preset, p),
         (None, Some(m)) => eprintln!("[fonts] {} → monospace: {} (no proportional)", preset, m),
