@@ -94,3 +94,24 @@ fn orphan_cleanup_removes_unused_files() {
     assert!(dir.path().join("used.png").exists());
     assert!(!dir.path().join("unused.png").exists());
 }
+
+#[test]
+fn image_thumbnail_lifecycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let w = 10u32;
+    let h = 10u32;
+    let data = vec![0u8; (w * h * 4) as usize];
+
+    // 1. Saving creates the main file and the thumbnail
+    let filename = storage::save_image_to_dir(dir.path(), &data, w, h).unwrap();
+    let filepath = dir.path().join(&filename);
+    let thumb_filepath = dir.path().join(format!("thumb_{}", filename));
+
+    assert!(filepath.exists());
+    assert!(thumb_filepath.exists());
+
+    // 2. Deleting deletes both
+    storage::delete_image_file_in_dir(dir.path(), &filename).unwrap();
+    assert!(!filepath.exists());
+    assert!(!thumb_filepath.exists());
+}

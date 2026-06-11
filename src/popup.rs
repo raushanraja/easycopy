@@ -352,13 +352,28 @@ impl PopupApp {
                     if filename.is_empty() {
                         continue;
                     }
-                    let path = Config::images_dir().join(&filename);
-                    if let Ok(img) = image::open(path) {
-                        let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
-                        let rgba = thumb.to_rgba8();
+                    let images_dir = Config::images_dir();
+                    let thumb_path = images_dir.join(format!("thumb_{}", filename));
+                    
+                    if let Ok(img) = image::open(&thumb_path) {
+                        let rgba = img.to_rgba8();
                         let size = [rgba.width() as usize, rgba.height() as usize];
                         let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
                         let _ = tx.send((filename, ci));
+                    } else {
+                        // Fallback: load original image, resize, save as thumbnail, and send.
+                        let path = images_dir.join(&filename);
+                        if let Ok(img) = image::open(path) {
+                            let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
+                            let rgba = thumb.to_rgba8();
+                            let size = [rgba.width() as usize, rgba.height() as usize];
+                            let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                            
+                            // Save thumbnail for future loads
+                            let _ = thumb.save(&thumb_path);
+                            
+                            let _ = tx.send((filename, ci));
+                        }
                     }
                 }
             }

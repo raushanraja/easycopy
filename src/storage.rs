@@ -53,6 +53,15 @@ pub fn load_history_from_path(path: &Path) -> Result<VecDeque<ClipItem>> {
 
 // ── image files ────────────────────────────────────────────────────
 
+fn save_thumbnail_to_dir(dir: &Path, filename: &str, img: &image::RgbaImage) -> Result<()> {
+    let dyn_img = image::DynamicImage::ImageRgba8(img.clone());
+    let thumb = dyn_img.resize(52, 52, image::imageops::FilterType::Triangle);
+    let thumb_path = dir.join(format!("thumb_{}", filename));
+    thumb.save(&thumb_path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    Ok(())
+}
+
 pub fn save_image(data: &[u8], w: u32, h: u32) -> Result<String> {
     save_image_to_dir(&Config::images_dir(), data, w, h)
 }
@@ -67,6 +76,10 @@ pub fn save_image_to_dir(dir: &Path, data: &[u8], w: u32, h: u32) -> Result<Stri
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
     img.save(&filepath)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    
+    // Save thumbnail too
+    let _ = save_thumbnail_to_dir(dir, &filename, &img);
+
     Ok(filename)
 }
 
@@ -86,6 +99,10 @@ pub fn save_image_owned_to_dir(dir: &Path, data: Vec<u8>, w: u32, h: u32) -> Res
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
     img.save(&filepath)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    // Save thumbnail too
+    let _ = save_thumbnail_to_dir(dir, &filename, &img);
+
     Ok(filename)
 }
 
@@ -103,12 +120,17 @@ pub fn load_image_from_dir(dir: &Path, filename: &str) -> Result<(u32, u32, Vec<
 
 pub fn delete_image_file(filename: &str) {
     let _ = std::fs::remove_file(Config::images_dir().join(filename));
+    let _ = std::fs::remove_file(Config::images_dir().join(format!("thumb_{}", filename)));
 }
 
 pub fn delete_image_file_in_dir(dir: &Path, filename: &str) -> Result<()> {
     let path = dir.join(filename);
     if path.exists() {
         std::fs::remove_file(path)?;
+    }
+    let thumb_path = dir.join(format!("thumb_{}", filename));
+    if thumb_path.exists() {
+        std::fs::remove_file(thumb_path)?;
     }
     Ok(())
 }
@@ -138,7 +160,8 @@ pub fn cleanup_orphaned_in_dir(dir: &Path, items: &VecDeque<ClipItem>) -> Result
             continue;
         }
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !known.contains(name) {
+        let base_name = name.strip_prefix("thumb_").unwrap_or(name);
+        if !known.contains(base_name) {
             std::fs::remove_file(path)?;
             removed += 1;
         }
