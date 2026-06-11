@@ -77,7 +77,7 @@ impl ThemeColors {
             accent: egui::Color32::from_rgb(99, 102, 241),        // Indigo 500
             accent_light: egui::Color32::from_rgb(129, 140, 248), // Indigo 400
             accent_dark: egui::Color32::from_rgb(79, 70, 229),    // Indigo 600
-            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25),
+            badge_bg_selected: egui::Color32::from_rgb(20, 26, 38),
             badge_bg_normal: egui::Color32::from_rgb(20, 26, 38), // Slate 900
             badge_icon_color: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
             icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
@@ -113,7 +113,7 @@ impl ThemeColors {
             accent: egui::Color32::from_rgb(99, 102, 241),        // Indigo 500
             accent_light: egui::Color32::from_rgb(129, 140, 248), // Indigo 400
             accent_dark: egui::Color32::from_rgb(79, 70, 229),    // Indigo 600
-            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 15),
+            badge_bg_selected: egui::Color32::from_rgb(226, 232, 240),
             badge_bg_normal: egui::Color32::from_rgb(241, 245, 249), // Slate 100
             badge_icon_color: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
             icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
@@ -158,7 +158,7 @@ impl ThemeColors {
             accent: frost_8,
             accent_light: frost_7,
             accent_dark: frost_9,
-            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_selected: polar_night_1,
             badge_bg_normal: polar_night_1,
             badge_icon_color: frost_8,
             icon_color_badge_normal: frost_8,
@@ -203,7 +203,7 @@ impl ThemeColors {
             accent: lavender,
             accent_light: mauve,
             accent_dark: sapphire,
-            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_selected: mantle,
             badge_bg_normal: mantle,
             badge_icon_color: lavender,
             icon_color_badge_normal: lavender,
@@ -247,7 +247,7 @@ impl ThemeColors {
             accent: purple,
             accent_light: pink,
             accent_dark: cyan,
-            badge_bg_selected: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+            badge_bg_selected: current_line,
             badge_bg_normal: current_line,
             badge_icon_color: purple,
             icon_color_badge_normal: purple,
@@ -530,6 +530,35 @@ pub fn paint_settings_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Col
     }
 }
 
+pub fn paint_palette_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.5, color);
+
+    // Draw artist palette outline shape
+    let center = rect.center();
+    let r = rect.width() * 0.4;
+    painter.circle_stroke(center, r, stroke);
+
+    // Small circular thumb hole at bottom right
+    let hole_center = center + egui::vec2(r * 0.45, r * 0.45);
+    painter.circle_stroke(hole_center, r * 0.15, stroke);
+
+    // Draw three small paint spots of different colors
+    let dot_r = r * 0.15;
+    
+    // Spot 1: Red
+    let spot1 = center + egui::vec2(-r * 0.4, -r * 0.3);
+    painter.circle_filled(spot1, dot_r, egui::Color32::from_rgb(239, 68, 68));
+
+    // Spot 2: Green
+    let spot2 = center + egui::vec2(r * 0.15, -r * 0.45);
+    painter.circle_filled(spot2, dot_r, egui::Color32::from_rgb(34, 197, 94));
+
+    // Spot 3: Blue
+    let spot3 = center + egui::vec2(-r * 0.45, r * 0.25);
+    painter.circle_filled(spot3, dot_r, egui::Color32::from_rgb(59, 130, 246));
+}
+
 pub fn paint_open_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
     let painter = ui.painter();
     let s = rect.width() / 12.0;
@@ -643,13 +672,7 @@ pub fn draw_icon_badge(
 
     let bg_color = if is_selected {
         theme.map_or_else(
-            || {
-                if ui.visuals().dark_mode {
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25)
-                } else {
-                    egui::Color32::from_rgba_unmultiplied(0, 0, 0, 15)
-                }
-            },
+            || ui.visuals().extreme_bg_color,
             |t| t.badge_bg_selected,
         )
     } else {

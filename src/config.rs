@@ -59,6 +59,9 @@ fn default_footer_show_clear() -> bool {
 fn default_footer_show_settings() -> bool {
     true
 }
+fn default_footer_show_theme() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -110,6 +113,7 @@ pub struct FooterConfig {
     pub show_help: bool,
     pub show_clear: bool,
     pub show_settings: bool,
+    pub show_theme: bool,
 }
 
 impl Default for FooterConfig {
@@ -119,6 +123,7 @@ impl Default for FooterConfig {
             show_help: default_footer_show_help(),
             show_clear: default_footer_show_clear(),
             show_settings: default_footer_show_settings(),
+            show_theme: default_footer_show_theme(),
         }
     }
 }

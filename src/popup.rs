@@ -703,6 +703,127 @@ impl PopupApp {
                                 let path = Config::config_path();
                                 let _ = std::process::Command::new("xdg-open").arg(path).spawn();
                             }
+                            first_drawn = true;
+                        }
+
+                        if self.config.footer.show_theme {
+                            if first_drawn {
+                                ui.add_space(8.0);
+                            }
+
+                            // Theme Selector Button (opens dropdown)
+                            let theme_btn_rect = ui
+                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
+                                .0;
+                            let theme_resp = ui.interact(
+                                theme_btn_rect,
+                                ui.id().with("theme_selector_btn"),
+                                egui::Sense::click(),
+                            );
+
+                            let theme_fill = if theme_resp.clicked() {
+                                ui.visuals().widgets.active.bg_fill
+                            } else if theme_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_fill
+                            } else {
+                                ui.visuals().widgets.inactive.bg_fill
+                            };
+
+                            let theme_stroke = if theme_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_stroke
+                            } else {
+                                ui.visuals().widgets.noninteractive.bg_stroke
+                            };
+
+                            ui.painter().rect(
+                                theme_btn_rect,
+                                egui::Rounding::same(8.0),
+                                theme_fill,
+                                theme_stroke,
+                            );
+
+                            let theme_color = ui.visuals().text_color();
+
+                            let theme_icon_rect = egui::Rect::from_center_size(
+                                theme_btn_rect.center(),
+                                egui::vec2(16.0, 16.0),
+                            );
+                            theme::paint_palette_icon(ui, theme_icon_rect, theme_color);
+
+                            let popup_id = ui.make_persistent_id("theme_dropdown");
+                            if theme_resp.clicked() {
+                                ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+                            }
+
+                            egui::popup_below_widget(
+                                ui,
+                                popup_id,
+                                &theme_resp,
+                                egui::PopupCloseBehavior::CloseOnClick,
+                                |ui| {
+                                    ui.set_width(120.0);
+                                    ui.spacing_mut().item_spacing.y = 4.0;
+                                    let themes = ["dark", "light", "nord", "catppuccin", "dracula"];
+                                    for t_name in &themes {
+                                        let is_selected = self.config.general.theme == *t_name;
+
+                                        let text_color = if is_selected {
+                                            egui::Color32::WHITE
+                                        } else {
+                                            self.theme_colors.as_ref().map_or(
+                                                ui.visuals().text_color(),
+                                                |c| c.text_color,
+                                            )
+                                        };
+
+                                        let (rect, response) = ui.allocate_exact_size(
+                                            egui::vec2(ui.available_width(), 26.0),
+                                            egui::Sense::click(),
+                                        );
+
+                                        let bg_fill = if is_selected {
+                                            self.theme_colors.as_ref().map_or(
+                                                ui.visuals().selection.bg_fill,
+                                                |c| c.selection_bg,
+                                            )
+                                        } else if response.hovered() {
+                                            self.theme_colors.as_ref().map_or(
+                                                ui.visuals().widgets.hovered.bg_fill,
+                                                |c| c.widget_hovered_bg,
+                                            )
+                                        } else {
+                                            egui::Color32::TRANSPARENT
+                                        };
+
+                                        ui.painter().rect_filled(
+                                            rect,
+                                            egui::Rounding::same(6.0),
+                                            bg_fill,
+                                        );
+
+                                        let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
+                                        let font_id = egui::FontId::proportional(14.0);
+                                        ui.painter().text(
+                                            text_pos,
+                                            egui::Align2::LEFT_CENTER,
+                                            *t_name,
+                                            font_id,
+                                            text_color,
+                                        );
+
+                                        if response.clicked() {
+                                            self.config.general.theme = t_name.to_string();
+                                            theme::apply_theme_and_fonts(
+                                                ui.ctx(),
+                                                &self.config.general.theme,
+                                                self.config.general.enable_theming,
+                                            );
+                                            self.theme_colors = theme::ThemeColors::from_config(&self.config);
+                                            let _ = self.config.save();
+                                        }
+                                    }
+                                },
+                            );
                         }
                     });
                 });
