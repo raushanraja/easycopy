@@ -58,6 +58,9 @@ fn default_font_proportional_path() -> String {
 fn default_font_monospace_path() -> String {
     String::new()
 }
+fn default_font_weight() -> String {
+    "normal".to_string()
+}
 
 fn default_footer_enable() -> bool {
     true
@@ -102,6 +105,8 @@ pub struct GeneralConfig {
     pub font_proportional_path: String,
     /// Custom monospace font file path (TTF/OTF)
     pub font_monospace_path: String,
+    /// Font weight: "normal" or "bold"
+    pub font_weight: String,
 }
 
 impl Default for GeneralConfig {
@@ -126,6 +131,7 @@ impl Default for GeneralConfig {
             font_size: default_font_size(),
             font_proportional_path: default_font_proportional_path(),
             font_monospace_path: default_font_monospace_path(),
+            font_weight: default_font_weight(),
         }
     }
 }
@@ -281,6 +287,12 @@ impl Config {
             "small" | "large" => font_size,
             _ => "medium".to_string(),
         };
+
+        let font_weight = self.general.font_weight.to_lowercase();
+        self.general.font_weight = match font_weight.as_str() {
+            "bold" => font_weight,
+            _ => "normal".to_string(),
+        };
     }
 }
 
@@ -322,6 +334,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.font_size, "medium");
         assert_eq!(cfg.general.font_proportional_path, "");
         assert_eq!(cfg.general.font_monospace_path, "");
+        assert_eq!(cfg.general.font_weight, "normal");
         assert_eq!(cfg.footer.enable, true);
         assert_eq!(cfg.footer.show_help, true);
         assert_eq!(cfg.footer.show_clear, true);

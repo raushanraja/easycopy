@@ -867,9 +867,20 @@ impl PopupApp {
                                         "JetBrains Mono",
                                     ];
                                     for (i, f_name) in font_presets.iter().enumerate() {
+                                        let available = f_name == &"default"
+                                            || theme::is_font_preset_available(f_name);
                                         let selected = self.config.general.font_preset == *f_name;
+                                        let label = if available {
+                                            display_names[i].to_string()
+                                        } else {
+                                            format!("{} (not installed)", display_names[i])
+                                        };
                                         let fg = if selected {
                                             egui::Color32::WHITE
+                                        } else if !available {
+                                            self.theme_colors
+                                                .as_ref()
+                                                .map_or(egui::Color32::GRAY, |c| c.weak_text_color)
                                         } else {
                                             self.theme_colors
                                                 .as_ref()
@@ -877,15 +888,21 @@ impl PopupApp {
                                         };
                                         if draw_item(
                                             ui,
-                                            display_names[i],
+                                            &label,
                                             selected,
                                             fg,
                                             self.theme_colors.as_ref(),
                                         ) {
-                                            self.config.general.font_preset = f_name.to_string();
-                                            theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            let _ = self.config.save();
-                                            ui.close_menu();
+                                            if available || selected {
+                                                self.config.general.font_preset =
+                                                    f_name.to_string();
+                                                theme::apply_theme_and_fonts(
+                                                    ui.ctx(),
+                                                    &self.config,
+                                                );
+                                                let _ = self.config.save();
+                                                ui.close_menu();
+                                            }
                                         }
                                     }
 
@@ -920,6 +937,43 @@ impl PopupApp {
                                             self.theme_colors.as_ref(),
                                         ) {
                                             self.config.general.font_size = s_name.to_string();
+                                            theme::apply_theme_and_fonts(ui.ctx(), &self.config);
+                                            let _ = self.config.save();
+                                            ui.close_menu();
+                                        }
+                                    }
+
+                                    // ── Font Weight ──
+                                    ui.add_space(6.0);
+                                    ui.label(
+                                        egui::RichText::new("FONT WEIGHT").size(11.0).color(
+                                            self.theme_colors
+                                                .as_ref()
+                                                .map_or(ui.visuals().weak_text_color(), |c| {
+                                                    c.weak_text_color
+                                                }),
+                                        ),
+                                    );
+                                    ui.separator();
+                                    let weights = ["normal", "bold"];
+                                    let weight_display = ["Normal", "Bold"];
+                                    for (i, w_name) in weights.iter().enumerate() {
+                                        let selected = self.config.general.font_weight == *w_name;
+                                        let fg = if selected {
+                                            egui::Color32::WHITE
+                                        } else {
+                                            self.theme_colors
+                                                .as_ref()
+                                                .map_or(ui.visuals().text_color(), |c| c.text_color)
+                                        };
+                                        if draw_item(
+                                            ui,
+                                            weight_display[i],
+                                            selected,
+                                            fg,
+                                            self.theme_colors.as_ref(),
+                                        ) {
+                                            self.config.general.font_weight = w_name.to_string();
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                                             let _ = self.config.save();
                                             ui.close_menu();

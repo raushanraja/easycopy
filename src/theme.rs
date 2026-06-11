@@ -1,5 +1,7 @@
 use crate::config::Config;
 use egui;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 // ── Theme Colors ─────────────────────────────────────────────────
 
@@ -289,6 +291,8 @@ fn font_size_values(size: &str) -> (f32, f32, f32, f32, f32) {
 }
 
 /// Find a font file by name in standard Linux font directories.
+/// Searches up to 3 levels deep to handle nested structures like
+/// `/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`.
 fn find_font_file(filename: &str) -> Option<std::path::PathBuf> {
     let mut dirs = vec![
         std::path::PathBuf::from("/usr/share/fonts"),
@@ -299,19 +303,33 @@ fn find_font_file(filename: &str) -> Option<std::path::PathBuf> {
         dirs.push(home.join(".local/share/fonts"));
     }
 
-    // Check top-level dirs and one level of subdirectories
     for base in &dirs {
+        // Direct hit
         let direct = base.join(filename);
         if direct.exists() {
             return Some(direct);
         }
+        // Walk up to 3 levels
         if let Ok(entries) = std::fs::read_dir(base) {
             for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let candidate = path.join(filename);
-                    if candidate.exists() {
-                        return Some(candidate);
+                let l1 = entry.path();
+                if !l1.is_dir() {
+                    continue;
+                }
+                let candidate = l1.join(filename);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+                if let Ok(sub) = std::fs::read_dir(&l1) {
+                    for sub_entry in sub.flatten() {
+                        let l2 = sub_entry.path();
+                        if !l2.is_dir() {
+                            continue;
+                        }
+                        let candidate = l2.join(filename);
+                        if candidate.exists() {
+                            return Some(candidate);
+                        }
                     }
                 }
             }
@@ -320,27 +338,172 @@ fn find_font_file(filename: &str) -> Option<std::path::PathBuf> {
     None
 }
 
-/// Resolve font file paths for a given preset name.
+/// Generate both `.ttf` and `.otf` variants of a base filename stem.
+fn with_ext(stem: &str) -> Vec<String> {
+    vec![format!("{}.ttf", stem), format!("{}.otf", stem)]
+}
+
+/// Fallback: query fontconfig for a font file path by family name.
+/// This handles Nerd Font, variable font, and other naming schemes that
+/// our file-scanner doesn't know about.
+///
+/// Uses `fc-list` first to verify the family actually exists (otherwise
+/// `fc-match` silently falls back to a default, giving us a wrong file).
+fn resolve_via_fc_match(pattern: &str) -> Option<std::path::PathBuf> {
+    // Step 1: does this family actually exist?
+    let list = std::process::Command::new("fc-list")
+        .arg(pattern)
+        .output()
+        .ok()?;
+    if !list.status.success() || list.stdout.is_empty() {
+        return None;
+    }
+
+    // Step 2: get the file path
+    let output = std::process::Command::new("fc-match")
+        .args(["--format", "%{file}", pattern])
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            let p = std::path::PathBuf::from(&path);
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// Try each name in order and return the first one found.
+/// For each name, both `.ttf` and `.otf` are attempted automatically.
+/// If file scanning fails, falls back to `fc-match` for fontconfig resolution.
+fn try_find(names: &[String]) -> Option<String> {
+    // Phase 1: scan known directories
+    for name in names {
+        let stem = name
+            .strip_suffix(".ttf")
+            .or_else(|| name.strip_suffix(".otf"))
+            .unwrap_or(name);
+        for candidate in with_ext(stem) {
+            if let Some(path) = find_font_file(&candidate) {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    // Phase 2: ask fontconfig (handles Nerd Font, etc.)
+    for name in names {
+        let stem = name
+            .strip_suffix(".ttf")
+            .or_else(|| name.strip_suffix(".otf"))
+            .unwrap_or(name);
+        if let Some(path) = resolve_via_fc_match(stem) {
+            return Some(path.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+/// Resolve font file paths for a given preset name and weight.
 /// Returns (proportional_path, monospace_path).
-fn resolve_font_paths(preset: &str) -> (Option<String>, Option<String>) {
+/// Tries weight-specific variants first, then falls back to common names.
+/// Both `.ttf` and `.otf` extensions are tried automatically.
+fn resolve_font_paths(preset: &str, weight: &str) -> (Option<String>, Option<String>) {
+    let w = if weight == "bold" { "Bold" } else { "Regular" };
+
     match preset {
-        "dejavu" => (
-            find_font_file("DejaVuSans.ttf").map(|p| p.to_string_lossy().to_string()),
-            find_font_file("DejaVuSansMono.ttf").map(|p| p.to_string_lossy().to_string()),
-        ),
-        "liberation" => (
-            find_font_file("LiberationSans-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-            find_font_file("LiberationMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-        ),
-        "fira" => (
-            find_font_file("FiraSans-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-            find_font_file("FiraCode-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-        ),
-        "jetbrains" => (
-            find_font_file("JetBrainsMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-            find_font_file("JetBrainsMono-Regular.ttf").map(|p| p.to_string_lossy().to_string()),
-        ),
+        "dejavu" => {
+            let prop = try_find(&[
+                format!("DejaVuSans-{}", w),
+                "DejaVuSans".into(),
+                "DejaVu Sans".into(), // fc-match family name
+            ]);
+            let mono = try_find(&[
+                format!("DejaVuSansMono-{}", w),
+                "DejaVuSansMono".into(),
+                "DejaVu Sans Mono".into(), // fc-match family name
+            ]);
+            (prop, mono)
+        }
+        "liberation" => {
+            let prop = try_find(&[
+                format!("LiberationSans-{}", w),
+                "LiberationSans-Regular".into(),
+                "LiberationSans".into(),
+                "Liberation Sans".into(), // fc-match family name
+            ]);
+            let mono = try_find(&[
+                format!("LiberationMono-{}", w),
+                "LiberationMono-Regular".into(),
+                "LiberationMono".into(),
+                "Liberation Mono".into(), // fc-match family name
+            ]);
+            (prop, mono)
+        }
+        "fira" => {
+            let prop_attempt = try_find(&[
+                format!("FiraSans-{}", w),
+                "FiraSans-Regular".into(),
+                "FiraSans".into(),
+                "Fira Sans".into(), // fc-match family name
+            ]);
+            let mono = try_find(&[
+                format!("FiraCode-{}", w),
+                "FiraCode-Regular".into(),
+                "FiraCode".into(),
+                "FiraCode-VF".into(),
+                "Fira Code".into(),          // fc-match family name
+                "FiraCode Nerd Font".into(), // Nerd Font variant
+                "FiraCode Nerd Font Mono".into(),
+            ]);
+            let prop = prop_attempt.or_else(|| mono.clone());
+            (prop, mono)
+        }
+        "jetbrains" => {
+            let mono = try_find(&[
+                format!("JetBrainsMono-{}", w),
+                "JetBrainsMono-Regular".into(),
+                "JetBrainsMono".into(),
+                "JetBrainsMono-VF".into(),
+                "JetBrains Mono".into(),            // fc-match family name
+                "JetBrainsMono Nerd Font".into(),   // Nerd Font variant
+                "JetBrainsMonoNL Nerd Font".into(), // NL = No Ligatures
+            ]);
+            (mono.clone(), mono)
+        }
         _ => (None, None),
+    }
+}
+
+/// Cache for font availability — scanned once, reused forever.
+static FONT_AVAILABILITY: OnceLock<HashMap<&'static str, bool>> = OnceLock::new();
+
+/// Check whether a font preset has at least one font file available on this system.
+/// Uses "Regular" weight for the probe since we only need to know if the font exists.
+/// Results are cached after the first call.
+pub fn is_font_preset_available(preset: &str) -> bool {
+    let map = FONT_AVAILABILITY.get_or_init(|| {
+        let mut m = HashMap::new();
+        m.insert("default", true);
+        for &p in &["dejavu", "liberation", "fira", "jetbrains"] {
+            let (prop, mono) = resolve_font_paths(p, "normal");
+            m.insert(p, prop.is_some() || mono.is_some());
+        }
+        m
+    });
+    map.get(preset).copied().unwrap_or(true)
+}
+
+/// Log font diagnostic info to stderr.
+fn log_font_diag(preset: &str, prop: &Option<String>, mono: &Option<String>) {
+    match (prop, mono) {
+        (Some(p), Some(m)) => {
+            eprintln!("[fonts] {} → proportional: {} | monospace: {}", preset, p, m)
+        }
+        (Some(p), None) => eprintln!("[fonts] {} → proportional: {} (no monospace)", preset, p),
+        (None, Some(m)) => eprintln!("[fonts] {} → monospace: {} (no proportional)", preset, m),
+        (None, None) => eprintln!("[fonts] {} → no font files found on this system", preset),
     }
 }
 
@@ -354,8 +517,10 @@ fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
         return;
     }
 
+    let weight = config.general.font_weight.as_str();
+
     // Use explicitly configured paths, or fall back to auto-detected ones
-    let (auto_prop, auto_mono) = resolve_font_paths(preset);
+    let (auto_prop, auto_mono) = resolve_font_paths(preset, weight);
 
     let prop_path = if !config.general.font_proportional_path.is_empty() {
         Some(std::path::PathBuf::from(
@@ -372,6 +537,12 @@ fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
     } else {
         auto_mono.map(std::path::PathBuf::from)
     };
+
+    log_font_diag(
+        preset,
+        &prop_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+        &mono_path.as_ref().map(|p| p.to_string_lossy().to_string()),
+    );
 
     if prop_path.is_none() && mono_path.is_none() {
         return;
@@ -399,6 +570,11 @@ fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
             fonts
                 .font_data
                 .insert(name.clone(), egui::FontData::from_owned(data));
+            fonts
+                .families
+                .get_mut(&egui::FontFamily::Monospace)
+                .unwrap()
+                .insert(0, name);
         }
     }
 
