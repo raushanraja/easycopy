@@ -216,7 +216,10 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);
-        assert_eq!(cfg.general.show_footer, true);
+        assert_eq!(cfg.footer.enable, true);
+        assert_eq!(cfg.footer.show_help, true);
+        assert_eq!(cfg.footer.show_clear, true);
+        assert_eq!(cfg.footer.show_settings, true);
     }
 
     #[test]

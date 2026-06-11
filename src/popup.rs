@@ -780,85 +780,96 @@ impl PopupApp {
             .inner_margin(egui::Margin::symmetric(20.0, 12.0))
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
-                    ui.label(egui::RichText::new(FOOTER_HELP).size(12.5).weak());
+                    if self.config.footer.show_help {
+                        ui.label(egui::RichText::new(FOOTER_HELP).size(12.5).weak());
+                    }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Clear History Button (icon-only)
-                        let enabled = !self.all.is_empty();
-                        let clear_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
-                        let clear_resp = ui.interact(clear_btn_rect, ui.id().with("clear_history_btn"), egui::Sense::click());
+                        let mut first_drawn = false;
 
-                        let fill = if !enabled {
-                            ui.visuals().widgets.noninteractive.bg_fill
-                        } else if clear_resp.clicked() {
-                            ui.visuals().widgets.active.bg_fill
-                        } else if clear_resp.hovered() {
-                            ui.visuals().widgets.hovered.bg_fill
-                        } else {
-                            ui.visuals().widgets.inactive.bg_fill
-                        };
+                        if self.config.footer.show_clear {
+                            // Clear History Button (icon-only)
+                            let enabled = !self.all.is_empty();
+                            let clear_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
+                            let clear_resp = ui.interact(clear_btn_rect, ui.id().with("clear_history_btn"), egui::Sense::click());
 
-                        let stroke = if !enabled {
-                            ui.visuals().widgets.noninteractive.bg_stroke
-                        } else if clear_resp.hovered() {
-                            ui.visuals().widgets.hovered.bg_stroke
-                        } else {
-                            ui.visuals().widgets.noninteractive.bg_stroke
-                        };
+                            let fill = if !enabled {
+                                ui.visuals().widgets.noninteractive.bg_fill
+                            } else if clear_resp.clicked() {
+                                ui.visuals().widgets.active.bg_fill
+                            } else if clear_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_fill
+                            } else {
+                                ui.visuals().widgets.inactive.bg_fill
+                            };
 
-                        ui.painter().rect(clear_btn_rect, egui::Rounding::same(8.0), fill, stroke);
+                            let stroke = if !enabled {
+                                ui.visuals().widgets.noninteractive.bg_stroke
+                            } else if clear_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_stroke
+                            } else {
+                                ui.visuals().widgets.noninteractive.bg_stroke
+                            };
 
-                        let text_color = if !enabled {
-                            ui.visuals().weak_text_color()
-                        } else {
-                            ui.visuals().text_color()
-                        };
+                            ui.painter().rect(clear_btn_rect, egui::Rounding::same(8.0), fill, stroke);
 
-                        let icon_rect = egui::Rect::from_center_size(
-                            clear_btn_rect.center(),
-                            egui::vec2(14.0, 14.0)
-                        );
-                        paint_trash_icon(ui, icon_rect, text_color);
+                            let text_color = if !enabled {
+                                ui.visuals().weak_text_color()
+                            } else {
+                                ui.visuals().text_color()
+                            };
 
-                        if enabled && clear_resp.clicked() {
-                            self.clear_history();
+                            let icon_rect = egui::Rect::from_center_size(
+                                clear_btn_rect.center(),
+                                egui::vec2(14.0, 14.0)
+                            );
+                            paint_trash_icon(ui, icon_rect, text_color);
+
+                            if enabled && clear_resp.clicked() {
+                                self.clear_history();
+                            }
+                            first_drawn = true;
                         }
 
-                        ui.add_space(8.0);
+                        if self.config.footer.show_settings {
+                            if first_drawn {
+                                ui.add_space(8.0);
+                            }
 
-                        // Settings Button (opens config)
-                        let settings_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
-                        let settings_resp = ui.interact(settings_btn_rect, ui.id().with("settings_btn"), egui::Sense::click());
+                            // Settings Button (opens config)
+                            let settings_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
+                            let settings_resp = ui.interact(settings_btn_rect, ui.id().with("settings_btn"), egui::Sense::click());
 
-                        let settings_fill = if settings_resp.clicked() {
-                            ui.visuals().widgets.active.bg_fill
-                        } else if settings_resp.hovered() {
-                            ui.visuals().widgets.hovered.bg_fill
-                        } else {
-                            ui.visuals().widgets.inactive.bg_fill
-                        };
+                            let settings_fill = if settings_resp.clicked() {
+                                ui.visuals().widgets.active.bg_fill
+                            } else if settings_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_fill
+                            } else {
+                                ui.visuals().widgets.inactive.bg_fill
+                            };
 
-                        let settings_stroke = if settings_resp.hovered() {
-                            ui.visuals().widgets.hovered.bg_stroke
-                        } else {
-                            ui.visuals().widgets.noninteractive.bg_stroke
-                        };
+                            let settings_stroke = if settings_resp.hovered() {
+                                ui.visuals().widgets.hovered.bg_stroke
+                            } else {
+                                ui.visuals().widgets.noninteractive.bg_stroke
+                            };
 
-                        ui.painter().rect(settings_btn_rect, egui::Rounding::same(8.0), settings_fill, settings_stroke);
+                            ui.painter().rect(settings_btn_rect, egui::Rounding::same(8.0), settings_fill, settings_stroke);
 
-                        let settings_color = ui.visuals().text_color();
+                            let settings_color = ui.visuals().text_color();
 
-                        let settings_icon_rect = egui::Rect::from_center_size(
-                            settings_btn_rect.center(),
-                            egui::vec2(16.0, 16.0)
-                        );
-                        paint_settings_icon(ui, settings_icon_rect, settings_color);
+                            let settings_icon_rect = egui::Rect::from_center_size(
+                                settings_btn_rect.center(),
+                                egui::vec2(16.0, 16.0)
+                            );
+                            paint_settings_icon(ui, settings_icon_rect, settings_color);
 
-                        if settings_resp.clicked() {
-                            let path = Config::config_path();
-                            let _ = std::process::Command::new("xdg-open")
-                                .arg(path)
-                                .spawn();
+                            if settings_resp.clicked() {
+                                let path = Config::config_path();
+                                let _ = std::process::Command::new("xdg-open")
+                                    .arg(path)
+                                    .spawn();
+                            }
                         }
                     });
                 });
@@ -1418,7 +1429,7 @@ impl eframe::App for PopupApp {
                 .stroke(egui::Stroke::new(1.0, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
             )
             .show(ctx, |ui| {
-                if self.config.general.show_footer {
+                if self.config.footer.enable {
                     egui::TopBottomPanel::bottom("footer_panel")
                         .frame(egui::Frame::none())
                         .show_inside(ui, |ui| {
