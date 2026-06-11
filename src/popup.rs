@@ -257,6 +257,13 @@ impl PopupApp {
         }
     }
 
+    fn weak_color(&self, ui: &egui::Ui) -> egui::Color32 {
+        self.theme_colors.as_ref().map_or(
+            ui.visuals().weak_text_color(),
+            |t| t.weak_text_color,
+        )
+    }
+
     fn load_large_image(&self, ctx: &egui::Context, filename: &str) -> Option<egui::TextureHandle> {
         let path = Config::images_dir().join(filename);
         if let Ok(img) = image::open(path) {
@@ -429,7 +436,7 @@ impl PopupApp {
                         if show_main {
                             ui.add_space(2.0);
                         }
-                        ui.label(egui::RichText::new("Clipboard history").size(13.0).weak());
+                        ui.label(egui::RichText::new("Clipboard history").size(13.0).color(self.weak_color(ui)));
                     }
                 });
             });
@@ -476,7 +483,7 @@ impl PopupApp {
                                 theme::paint_search_icon(
                                     ui,
                                     icon_rect,
-                                    ui.visuals().weak_text_color(),
+                                    self.weak_color(ui),
                                 );
 
                                 ui.add_space(6.0);
@@ -516,7 +523,7 @@ impl PopupApp {
                                             let btn_color = if btn_resp.hovered() {
                                                 ui.visuals().text_color()
                                             } else {
-                                                ui.visuals().weak_text_color()
+                                                self.weak_color(ui)
                                             };
                                             let close_icon_rect = egui::Rect::from_center_size(
                                                 btn_rect.center(),
@@ -534,7 +541,7 @@ impl PopupApp {
                         });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(label_text).size(13.0).weak());
+                        ui.label(egui::RichText::new(label_text).size(13.0).color(self.weak_color(ui)));
                     });
                 });
             });
@@ -544,17 +551,19 @@ impl PopupApp {
         egui::Frame::none()
             .inner_margin(egui::Margin::symmetric(20.0, 6.0))
             .show(ui, |ui| {
+                let weak_color = self.weak_color(ui);
                 if self.all.is_empty() {
                     draw_empty_state(
                         ui,
                         "No clips yet",
                         "Copy text or an image while the daemon is running.",
+                        weak_color,
                     );
                     return;
                 }
 
                 if self.filtered.is_empty() {
-                    draw_empty_state(ui, "No matches", "Try a shorter search term.");
+                    draw_empty_state(ui, "No matches", "Try a shorter search term.", weak_color);
                     return;
                 }
 
@@ -585,7 +594,7 @@ impl PopupApp {
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     if self.config.footer.show_help {
-                        ui.label(egui::RichText::new(FOOTER_HELP).size(12.5).weak());
+                        ui.label(egui::RichText::new(FOOTER_HELP).size(12.5).color(self.weak_color(ui)));
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -629,7 +638,7 @@ impl PopupApp {
                             );
 
                             let text_color = if !enabled {
-                                ui.visuals().weak_text_color()
+                                self.weak_color(ui)
                             } else {
                                 ui.visuals().text_color()
                             };
@@ -838,7 +847,7 @@ impl PopupApp {
                                                         relative_time(*timestamp)
                                                     ))
                                                     .size(12.5)
-                                                    .weak(),
+                                                    .color(self.weak_color(ui)),
                                                 );
                                             });
                                         },
@@ -856,7 +865,7 @@ impl PopupApp {
                                                         |t| t.shortcut_color,
                                                     )
                                                 } else {
-                                                    ui.visuals().weak_text_color()
+                                                    self.weak_color(ui)
                                                 };
                                                 ui.label(
                                                     egui::RichText::new(format!("^{}", row + 1))
@@ -929,7 +938,7 @@ impl PopupApp {
                                                         filename, *timestamp, file_size,
                                                     ))
                                                     .size(12.5)
-                                                    .weak(),
+                                                    .color(self.weak_color(ui)),
                                                 );
                                             });
                                         },
@@ -947,7 +956,7 @@ impl PopupApp {
                                                         |t| t.shortcut_color,
                                                     )
                                                 } else {
-                                                    ui.visuals().weak_text_color()
+                                                    self.weak_color(ui)
                                                 };
                                                 ui.label(
                                                     egui::RichText::new(format!("^{}", row + 1))
@@ -1409,16 +1418,16 @@ impl eframe::App for PopupApp {
     }
 }
 
-fn draw_empty_state(ui: &mut egui::Ui, title: &str, subtitle: &str) {
+fn draw_empty_state(ui: &mut egui::Ui, title: &str, subtitle: &str, weak_color: egui::Color32) {
     ui.vertical_centered(|ui| {
         ui.add_space(100.0);
         let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
-        theme::paint_text_icon(ui, icon_rect, ui.visuals().weak_text_color());
+        theme::paint_text_icon(ui, icon_rect, weak_color);
 
         ui.add_space(16.0);
         ui.label(egui::RichText::new(title).heading().strong());
         ui.add_space(8.0);
-        ui.label(egui::RichText::new(subtitle).size(15.0).weak());
+        ui.label(egui::RichText::new(subtitle).size(15.0).color(weak_color));
     });
 }
 

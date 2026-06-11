@@ -49,6 +49,10 @@ pub struct ThemeColors {
 
     // Misc
     pub shortcut_color: egui::Color32,
+
+    // Text colors
+    pub text_color: egui::Color32,
+    pub weak_text_color: egui::Color32,
 }
 
 impl ThemeColors {
@@ -83,6 +87,8 @@ impl ThemeColors {
             lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
             lightbox_icon_hovered: egui::Color32::WHITE,
             shortcut_color: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+            text_color: egui::Color32::from_rgb(241, 245, 249),
+            weak_text_color: egui::Color32::from_rgb(148, 163, 184),
         }
     }
 
@@ -117,6 +123,8 @@ impl ThemeColors {
             lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
             lightbox_icon_hovered: egui::Color32::WHITE,
             shortcut_color: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+            text_color: egui::Color32::from_rgb(15, 23, 42),
+            weak_text_color: egui::Color32::from_rgb(100, 116, 139),
         }
     }
 
@@ -160,6 +168,8 @@ impl ThemeColors {
             lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
             lightbox_icon_hovered: egui::Color32::WHITE,
             shortcut_color: egui::Color32::from_rgba_unmultiplied(216, 222, 233, 180),
+            text_color: egui::Color32::from_rgb(236, 239, 244),
+            weak_text_color: egui::Color32::from_rgb(162, 175, 195),
         }
     }
 
@@ -203,6 +213,8 @@ impl ThemeColors {
             lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
             lightbox_icon_hovered: egui::Color32::WHITE,
             shortcut_color: egui::Color32::from_rgba_unmultiplied(205, 214, 244, 180),
+            text_color: egui::Color32::from_rgb(205, 214, 244),
+            weak_text_color: egui::Color32::from_rgb(166, 173, 200),
         }
     }
 
@@ -245,6 +257,8 @@ impl ThemeColors {
             lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
             lightbox_icon_hovered: egui::Color32::WHITE,
             shortcut_color: egui::Color32::from_rgba_unmultiplied(248, 248, 242, 180),
+            text_color: egui::Color32::from_rgb(248, 248, 242),
+            weak_text_color: egui::Color32::from_rgb(160, 172, 206),
         }
     }
 
@@ -296,6 +310,25 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: b
     visuals.widgets.active.bg_fill = colors.widget_active_bg;
     visuals.selection.bg_fill = colors.selection_bg;
     visuals.selection.stroke = egui::Stroke::new(1.0, colors.selection_stroke);
+
+    visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
+    visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
+    visuals.widgets.hovered.fg_stroke = egui::Stroke::new(
+        1.0,
+        if theme == "light" {
+            egui::Color32::BLACK
+        } else {
+            egui::Color32::WHITE
+        },
+    );
+    visuals.widgets.active.fg_stroke = egui::Stroke::new(
+        1.0,
+        if theme == "light" {
+            egui::Color32::BLACK
+        } else {
+            egui::Color32::WHITE
+        },
+    );
 
     visuals.window_rounding = egui::Rounding::same(16.0);
     ctx.set_visuals(visuals);
