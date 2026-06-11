@@ -3,7 +3,11 @@ use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 /// Parse a human-readable hotkey string like `Ctrl+Alt+V` into a
 /// `global_hotkey::HotKey`.
 pub fn parse_hotkey(s: &str) -> Option<HotKey> {
-    let parts: Vec<&str> = s.split('+').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> = s
+        .split('+')
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
     if parts.is_empty() {
         return None;
     }

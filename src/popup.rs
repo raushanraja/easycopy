@@ -1,12 +1,14 @@
 use crate::config::Config;
 use crate::history::ClipItem;
 use crate::storage;
+use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const SEARCH_HINT: &str = "Search clips, image size, or filename…";
-const FOOTER_HELP: &str = "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
+const FOOTER_HELP: &str =
+    "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
 
 /// Entry point for the popup window. Blocks until the window is closed.
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
@@ -36,7 +38,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
         "easycopy",
         options,
         Box::new(move |cc| {
-            apply_theme_and_fonts(
+            theme::apply_theme_and_fonts(
                 &cc.egui_ctx,
                 config.general.theme.as_str(),
                 config.general.enable_theming,
@@ -56,8 +58,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     };
 
     if let Some(item) = item_to_write {
-        let sent_via_ipc = is_daemon_running()
-            && crate::ipc::send_paste_request(&item).is_ok();
+        let sent_via_ipc = is_daemon_running() && crate::ipc::send_paste_request(&item).is_ok();
         if !sent_via_ipc {
             if let Ok(mut cb) = arboard::Clipboard::new() {
                 let is_image = item.is_image();
@@ -113,268 +114,6 @@ fn simulate_paste() {
         .status();
 }
 
-fn apply_theme_and_fonts(ctx: &egui::Context, theme: &str, enable_theming: bool) {
-    if !enable_theming {
-        return;
-    }
-    let mut visuals = if theme == "light" {
-        egui::Visuals::light()
-    } else {
-        egui::Visuals::dark()
-    };
-
-    if theme == "light" {
-        visuals.window_fill = egui::Color32::from_rgb(248, 250, 252); // Slate 50
-        visuals.panel_fill = egui::Color32::from_rgb(248, 250, 252);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(241, 245, 249); // Slate 100
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(241, 245, 249);
-        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(226, 232, 240)); // Slate 200
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(241, 245, 249);
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(226, 232, 240);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(203, 213, 225);
-        visuals.selection.bg_fill = egui::Color32::from_rgb(79, 70, 229); // Indigo 600
-        visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(99, 102, 241));
-    } else {
-        visuals.window_fill = egui::Color32::from_rgb(11, 15, 25); // Slate 950
-        visuals.panel_fill = egui::Color32::from_rgb(11, 15, 25);
-        visuals.extreme_bg_color = egui::Color32::from_rgb(20, 26, 38); // Slate 900
-        visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(20, 26, 38);
-        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(33, 41, 54)); // Slate 800
-        visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(20, 26, 38);
-        visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(28, 35, 51);
-        visuals.widgets.active.bg_fill = egui::Color32::from_rgb(51, 65, 85);
-        visuals.selection.bg_fill = egui::Color32::from_rgb(79, 70, 229); // Indigo 600
-        visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(129, 140, 248)); // Indigo 400
-    }
-
-    visuals.window_rounding = egui::Rounding::same(16.0);
-    ctx.set_visuals(visuals);
-
-    let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 8.0);
-    style.spacing.window_margin = egui::Margin::same(0.0);
-    style.visuals.window_rounding = egui::Rounding::same(16.0);
-
-    style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::proportional(22.0));
-    style.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(16.0));
-    style.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(14.5));
-    style.text_styles.insert(egui::TextStyle::Small, egui::FontId::proportional(13.0));
-    style.text_styles.insert(egui::TextStyle::Monospace, egui::FontId::monospace(15.0));
-
-    ctx.set_style(style);
-}
-
-// ── custom vector icons drawn programmatically ───────────────────────
-
-fn paint_search_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let stroke = egui::Stroke::new(1.8, color);
-
-    // Search circle
-    let radius = (rect.width() * 0.32).min(rect.height() * 0.32);
-    let center = rect.center() - egui::vec2(1.5, 1.5);
-    painter.circle_stroke(center, radius, stroke);
-
-    // Handle line
-    let start = center + egui::vec2(radius * 0.707, radius * 0.707);
-    let end = rect.right_bottom() - egui::vec2(1.5, 1.5);
-    painter.line_segment([start, end], stroke);
-}
-
-fn paint_close_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let stroke = egui::Stroke::new(1.8, color);
-    painter.line_segment([rect.left_top(), rect.right_bottom()], stroke);
-    painter.line_segment([rect.right_top(), rect.left_bottom()], stroke);
-}
-
-fn paint_text_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let stroke = egui::Stroke::new(1.5, color);
-
-    // Document boundary
-    painter.rect_stroke(rect, egui::Rounding::same(1.5), stroke);
-
-    // Document text lines
-    let line_y1 = rect.top() + rect.height() * 0.3;
-    let line_y2 = rect.top() + rect.height() * 0.55;
-    let line_y3 = rect.top() + rect.height() * 0.8;
-
-    painter.line_segment([egui::pos2(rect.left() + 3.0, line_y1), egui::pos2(rect.right() - 3.0, line_y1)], stroke);
-    painter.line_segment([egui::pos2(rect.left() + 3.0, line_y2), egui::pos2(rect.right() - 3.0, line_y2)], stroke);
-    painter.line_segment([egui::pos2(rect.left() + 3.0, line_y3), egui::pos2(rect.right() - 6.0, line_y3)], stroke);
-}
-
-fn paint_image_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let stroke = egui::Stroke::new(1.5, color);
-
-    // Image border frame
-    painter.rect_stroke(rect, egui::Rounding::same(1.5), stroke);
-
-    // Sun
-    let sun_center = rect.left_top() + egui::vec2(rect.width() * 0.3, rect.height() * 0.3);
-    painter.circle_stroke(sun_center, rect.width() * 0.1, egui::Stroke::new(1.2, color));
-
-    // Mountains
-    let p1 = egui::pos2(rect.left() + 2.0, rect.bottom() - 2.0);
-    let p2 = egui::pos2(rect.left() + rect.width() * 0.4, rect.top() + rect.height() * 0.45);
-    let p3 = egui::pos2(rect.left() + rect.width() * 0.6, rect.bottom() - 4.0);
-    let p4 = egui::pos2(rect.left() + rect.width() * 0.8, rect.top() + rect.height() * 0.55);
-    let p5 = egui::pos2(rect.right() - 2.0, rect.bottom() - 2.0);
-
-    painter.line_segment([p1, p2], stroke);
-    painter.line_segment([p2, p3], stroke);
-    painter.line_segment([p3, p4], stroke);
-    painter.line_segment([p4, p5], stroke);
-}
-
-fn paint_trash_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let stroke = egui::Stroke::new(1.5, color);
-
-    // Lid line
-    painter.line_segment(
-        [egui::pos2(rect.left() - 1.0, rect.top() + rect.height() * 0.2),
-         egui::pos2(rect.right() + 1.0, rect.top() + rect.height() * 0.2)],
-        stroke
-    );
-
-    // Lid handle on top
-    let handle_w = rect.width() * 0.3;
-    let handle_h = rect.height() * 0.15;
-    let handle_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.center().x, rect.top() + handle_h / 2.0),
-        egui::vec2(handle_w, handle_h)
-    );
-    painter.rect_stroke(handle_rect, egui::Rounding::same(0.5), stroke);
-
-    // Trash body
-    let bin_rect = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + 2.0, rect.top() + rect.height() * 0.25),
-        egui::pos2(rect.right() - 2.0, rect.bottom())
-    );
-    painter.rect_stroke(bin_rect, egui::Rounding::same(1.0), stroke);
-
-    // Ribs
-    painter.line_segment(
-        [egui::pos2(rect.center().x - 1.5, rect.top() + rect.height() * 0.4),
-         egui::pos2(rect.center().x - 1.5, rect.bottom() - 2.0)],
-        stroke
-    );
-    painter.line_segment(
-        [egui::pos2(rect.center().x + 1.5, rect.top() + rect.height() * 0.4),
-         egui::pos2(rect.center().x + 1.5, rect.bottom() - 2.0)],
-        stroke
-    );
-}
-
-fn paint_settings_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let center = rect.center();
-    let r_outer = rect.width() * 0.35;
-    let r_inner = rect.width() * 0.15;
-    let tooth_len = rect.width() * 0.12;
-    let stroke = egui::Stroke::new(1.5, color);
-
-    // Draw center hole
-    painter.circle_stroke(center, r_inner, stroke);
-
-    // Draw outer base ring
-    painter.circle_stroke(center, r_outer, stroke);
-
-    // Draw 8 teeth around the ring
-    let num_teeth = 8;
-    for i in 0..num_teeth {
-        let angle = (i as f32) * (2.0 * std::f32::consts::PI / (num_teeth as f32));
-        let cos = angle.cos();
-        let sin = angle.sin();
-
-        // Tooth base position on outer ring
-        let p_base = egui::pos2(center.x + r_outer * cos, center.y + r_outer * sin);
-        // Tooth tip position
-        let p_tip = egui::pos2(center.x + (r_outer + tooth_len) * cos, center.y + (r_outer + tooth_len) * sin);
-
-        painter.line_segment([p_base, p_tip], stroke);
-    }
-}
-
-fn paint_open_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
-    let painter = ui.painter();
-    let s = rect.width() / 12.0;
-    let stroke = egui::Stroke::new(1.2 * s, color);
-    
-    let x = rect.left();
-    let y = rect.top();
-
-    // 1. Draw the box/bracket shape with rounded-diagonal corners
-    // Top segment of the box
-    painter.line_segment([egui::pos2(x + 5.1 * s, y + 2.4 * s), egui::pos2(x + 3.2 * s, y + 2.4 * s)], stroke);
-    // Top-left corner
-    painter.line_segment([egui::pos2(x + 3.2 * s, y + 2.4 * s), egui::pos2(x + 2.4 * s, y + 3.2 * s)], stroke);
-    // Left edge
-    painter.line_segment([egui::pos2(x + 2.4 * s, y + 3.2 * s), egui::pos2(x + 2.4 * s, y + 8.8 * s)], stroke);
-    // Bottom-left corner
-    painter.line_segment([egui::pos2(x + 2.4 * s, y + 8.8 * s), egui::pos2(x + 3.2 * s, y + 9.6 * s)], stroke);
-    // Bottom edge
-    painter.line_segment([egui::pos2(x + 3.2 * s, y + 9.6 * s), egui::pos2(x + 8.8 * s, y + 9.6 * s)], stroke);
-    // Bottom-right corner
-    painter.line_segment([egui::pos2(x + 8.8 * s, y + 9.6 * s), egui::pos2(x + 9.6 * s, y + 8.8 * s)], stroke);
-    // Right edge
-    painter.line_segment([egui::pos2(x + 9.6 * s, y + 8.8 * s), egui::pos2(x + 9.6 * s, y + 6.9 * s)], stroke);
-
-    // 2. Draw the diagonal arrow line
-    painter.line_segment([egui::pos2(x + 5.8 * s, y + 5.8 * s), egui::pos2(x + 9.6 * s, y + 2.4 * s)], stroke);
-
-    // 3. Draw the arrowhead L-shape (top-right)
-    // Horizontal segment of arrowhead
-    painter.line_segment([egui::pos2(x + 7.2 * s, y + 2.4 * s), egui::pos2(x + 9.6 * s, y + 2.4 * s)], stroke);
-    // Vertical segment of arrowhead
-    painter.line_segment([egui::pos2(x + 9.6 * s, y + 2.4 * s), egui::pos2(x + 9.6 * s, y + 4.8 * s)], stroke);
-}
-
-fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool, enable_theming: bool) {
-    let size = egui::vec2(36.0, 36.0);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense { click: false, drag: false, focusable: false });
-
-    let bg_color = if is_selected {
-        if ui.visuals().dark_mode {
-            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 25)
-        } else {
-            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 15)
-        }
-    } else {
-        if !enable_theming {
-            ui.visuals().widgets.noninteractive.bg_fill
-        } else if ui.visuals().dark_mode {
-            egui::Color32::from_rgb(20, 26, 38) // Slate 900
-        } else {
-            egui::Color32::from_rgb(241, 245, 249) // Slate 100
-        }
-    };
-
-    let icon_color = if is_selected {
-        ui.visuals().text_color()
-    } else {
-        if !enable_theming {
-            ui.visuals().text_color()
-        } else {
-            egui::Color32::from_rgb(99, 102, 241) // Indigo 500
-        }
-    };
-
-    ui.painter().circle_filled(rect.center(), 18.0, bg_color);
-
-    // Draw the actual icon centered inside the badge (16x16 size)
-    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(16.0, 16.0));
-    match icon_type {
-        "text" => paint_text_icon(ui, icon_rect, icon_color),
-        "image" => paint_image_icon(ui, icon_rect, icon_color),
-        _ => {}
-    }
-}
-
 struct PopupApp {
     all: Vec<ClipItem>,
     filtered: Vec<usize>,
@@ -387,6 +126,7 @@ struct PopupApp {
     focus_search_once: bool,
     scroll_to_selected_once: bool,
     config: Config,
+    theme_colors: Option<ThemeColors>,
     preview_image: Option<(String, egui::TextureHandle)>,
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
@@ -418,7 +158,7 @@ impl PopupApp {
                     }
                     let images_dir = Config::images_dir();
                     let thumb_path = images_dir.join(format!("thumb_{}", filename));
-                    
+
                     if let Ok(img) = image::open(&thumb_path) {
                         let rgba = img.to_rgba8();
                         let size = [rgba.width() as usize, rgba.height() as usize];
@@ -432,10 +172,10 @@ impl PopupApp {
                             let rgba = thumb.to_rgba8();
                             let size = [rgba.width() as usize, rgba.height() as usize];
                             let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-                            
+
                             // Save thumbnail for future loads
                             let _ = thumb.save(&thumb_path);
-                            
+
                             let _ = tx.send((filename, ci));
                         }
                     }
@@ -444,22 +184,40 @@ impl PopupApp {
         });
 
         // Pre-compute caches to avoid per-frame allocations in the render loop
-        let cached_char_counts: Vec<usize> = all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => content.chars().count(),
-            _ => 0,
-        }).collect();
+        let cached_char_counts: Vec<usize> = all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => content.chars().count(),
+                _ => 0,
+            })
+            .collect();
 
-        let cached_previews: Vec<String> = all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => preview_text(content, config.general.preview_chars),
-            _ => String::new(),
-        }).collect();
+        let cached_previews: Vec<String> = all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => {
+                    preview_text(content, config.general.preview_chars)
+                }
+                _ => String::new(),
+            })
+            .collect();
 
-        let cached_search: Vec<String> = all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => content.to_lowercase(),
-            ClipItem::Image { width, height, filename, .. } => {
-                format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase()
-            }
-        }).collect();
+        let cached_search: Vec<String> = all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => content.to_lowercase(),
+                ClipItem::Image {
+                    width,
+                    height,
+                    filename,
+                    ..
+                } => format!(
+                    "{}\u{00d7}{} {}x{} {}",
+                    width, height, width, height, filename
+                )
+                .to_lowercase(),
+            })
+            .collect();
 
         let mut cached_file_sizes = HashMap::new();
         for item in &all {
@@ -471,6 +229,8 @@ impl PopupApp {
                 }
             }
         }
+
+        let theme_colors = ThemeColors::from_config(&config);
 
         Self {
             all,
@@ -484,6 +244,7 @@ impl PopupApp {
             focus_search_once: true,
             scroll_to_selected_once: false,
             config,
+            theme_colors,
             preview_image: None,
             lightbox_zoom: 1.0,
             lightbox_pan: egui::Vec2::ZERO,
@@ -503,7 +264,11 @@ impl PopupApp {
             let rgba = large.to_rgba8();
             let size = [rgba.width() as usize, rgba.height() as usize];
             let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-            Some(ctx.load_texture(format!("large_{}", filename), ci, egui::TextureOptions::LINEAR))
+            Some(ctx.load_texture(
+                format!("large_{}", filename),
+                ci,
+                egui::TextureOptions::LINEAR,
+            ))
         } else {
             None
         }
@@ -511,7 +276,10 @@ impl PopupApp {
 
     fn apply_filter(&mut self) {
         let q = self.query.trim().to_lowercase();
-        let filtered: Vec<usize> = self.cached_search.iter().enumerate()
+        let filtered: Vec<usize> = self
+            .cached_search
+            .iter()
+            .enumerate()
             .filter(|(_, s)| q.is_empty() || s.contains(q.as_str()))
             .map(|(i, _)| i)
             .collect();
@@ -522,22 +290,41 @@ impl PopupApp {
 
     /// Recompute all per-item caches after the item list changes.
     fn rebuild_caches(&mut self) {
-        self.cached_char_counts = self.all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => content.chars().count(),
-            _ => 0,
-        }).collect();
+        self.cached_char_counts = self
+            .all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => content.chars().count(),
+                _ => 0,
+            })
+            .collect();
 
-        self.cached_previews = self.all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => preview_text(content, self.preview_chars),
-            _ => String::new(),
-        }).collect();
+        self.cached_previews = self
+            .all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => preview_text(content, self.preview_chars),
+                _ => String::new(),
+            })
+            .collect();
 
-        self.cached_search = self.all.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => content.to_lowercase(),
-            ClipItem::Image { width, height, filename, .. } => {
-                format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase()
-            }
-        }).collect();
+        self.cached_search = self
+            .all
+            .iter()
+            .map(|item| match item {
+                ClipItem::Text { content, .. } => content.to_lowercase(),
+                ClipItem::Image {
+                    width,
+                    height,
+                    filename,
+                    ..
+                } => format!(
+                    "{}\u{00d7}{} {}x{} {}",
+                    width, height, width, height, filename
+                )
+                .to_lowercase(),
+            })
+            .collect();
 
         self.cached_file_sizes.clear();
         for item in &self.all {
@@ -582,7 +369,9 @@ impl PopupApp {
     }
 
     fn delete_current(&mut self) {
-        let Some(&orig_idx) = self.filtered.get(self.selected) else { return };
+        let Some(&orig_idx) = self.filtered.get(self.selected) else {
+            return;
+        };
 
         if let Some(ClipItem::Image { filename, .. }) = self.all.get(orig_idx) {
             if !filename.is_empty() {
@@ -640,18 +429,15 @@ impl PopupApp {
                         if show_main {
                             ui.add_space(2.0);
                         }
-                        ui.label(
-                            egui::RichText::new("Clipboard history")
-                                .size(13.0)
-                                .weak(),
-                        );
+                        ui.label(egui::RichText::new("Clipboard history").size(13.0).weak());
                     }
                 });
             });
     }
 
     fn draw_search(&mut self, ui: &mut egui::Ui) {
-        let has_no_header = self.config.general.hide_main_header && self.config.general.hide_secondary_header;
+        let has_no_header =
+            self.config.general.hide_main_header && self.config.general.hide_secondary_header;
         let top_margin = if has_no_header { 18.0 } else { 8.0 };
 
         egui::Frame::none()
@@ -679,8 +465,19 @@ impl PopupApp {
                             ui.set_width(search_width);
                             ui.horizontal(|ui| {
                                 // Search icon
-                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense { click: false, drag: false, focusable: false });
-                                paint_search_icon(ui, icon_rect, ui.visuals().weak_text_color());
+                                let (icon_rect, _) = ui.allocate_exact_size(
+                                    egui::vec2(16.0, 16.0),
+                                    egui::Sense {
+                                        click: false,
+                                        drag: false,
+                                        focusable: false,
+                                    },
+                                );
+                                theme::paint_search_icon(
+                                    ui,
+                                    icon_rect,
+                                    ui.visuals().weak_text_color(),
+                                );
 
                                 ui.add_space(6.0);
 
@@ -709,30 +506,35 @@ impl PopupApp {
                                 }
 
                                 if !self.query.is_empty() {
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        let (btn_rect, btn_resp) = ui.allocate_exact_size(egui::vec2(18.0, 18.0), egui::Sense::click());
-                                        let btn_color = if btn_resp.hovered() {
-                                            ui.visuals().text_color()
-                                        } else {
-                                            ui.visuals().weak_text_color()
-                                        };
-                                        let close_icon_rect = egui::Rect::from_center_size(btn_rect.center(), egui::vec2(8.0, 8.0));
-                                        paint_close_icon(ui, close_icon_rect, btn_color);
-                                        if btn_resp.clicked() {
-                                            self.query.clear();
-                                            self.apply_filter();
-                                        }
-                                    });
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            let (btn_rect, btn_resp) = ui.allocate_exact_size(
+                                                egui::vec2(18.0, 18.0),
+                                                egui::Sense::click(),
+                                            );
+                                            let btn_color = if btn_resp.hovered() {
+                                                ui.visuals().text_color()
+                                            } else {
+                                                ui.visuals().weak_text_color()
+                                            };
+                                            let close_icon_rect = egui::Rect::from_center_size(
+                                                btn_rect.center(),
+                                                egui::vec2(8.0, 8.0),
+                                            );
+                                            theme::paint_close_icon(ui, close_icon_rect, btn_color);
+                                            if btn_resp.clicked() {
+                                                self.query.clear();
+                                                self.apply_filter();
+                                            }
+                                        },
+                                    );
                                 }
                             });
                         });
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(label_text)
-                                .size(13.0)
-                                .weak(),
-                        );
+                        ui.label(egui::RichText::new(label_text).size(13.0).weak());
                     });
                 });
             });
@@ -764,7 +566,9 @@ impl PopupApp {
                         ui.set_width(ui.available_width());
                         for row in 0..self.filtered.len() {
                             let orig_idx = self.filtered[row];
-                            let Some(item) = self.all.get(orig_idx).cloned() else { continue };
+                            let Some(item) = self.all.get(orig_idx).cloned() else {
+                                continue;
+                            };
                             if self.draw_row(ui, row, orig_idx, item) {
                                 self.selected = row;
                                 self.select_and_close(ui.ctx());
@@ -790,8 +594,14 @@ impl PopupApp {
                         if self.config.footer.show_clear {
                             // Clear History Button (icon-only)
                             let enabled = !self.all.is_empty();
-                            let clear_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
-                            let clear_resp = ui.interact(clear_btn_rect, ui.id().with("clear_history_btn"), egui::Sense::click());
+                            let clear_btn_rect = ui
+                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
+                                .0;
+                            let clear_resp = ui.interact(
+                                clear_btn_rect,
+                                ui.id().with("clear_history_btn"),
+                                egui::Sense::click(),
+                            );
 
                             let fill = if !enabled {
                                 ui.visuals().widgets.noninteractive.bg_fill
@@ -811,7 +621,12 @@ impl PopupApp {
                                 ui.visuals().widgets.noninteractive.bg_stroke
                             };
 
-                            ui.painter().rect(clear_btn_rect, egui::Rounding::same(8.0), fill, stroke);
+                            ui.painter().rect(
+                                clear_btn_rect,
+                                egui::Rounding::same(8.0),
+                                fill,
+                                stroke,
+                            );
 
                             let text_color = if !enabled {
                                 ui.visuals().weak_text_color()
@@ -821,9 +636,9 @@ impl PopupApp {
 
                             let icon_rect = egui::Rect::from_center_size(
                                 clear_btn_rect.center(),
-                                egui::vec2(14.0, 14.0)
+                                egui::vec2(14.0, 14.0),
                             );
-                            paint_trash_icon(ui, icon_rect, text_color);
+                            theme::paint_trash_icon(ui, icon_rect, text_color);
 
                             if enabled && clear_resp.clicked() {
                                 self.clear_history();
@@ -837,8 +652,14 @@ impl PopupApp {
                             }
 
                             // Settings Button (opens config)
-                            let settings_btn_rect = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click()).0;
-                            let settings_resp = ui.interact(settings_btn_rect, ui.id().with("settings_btn"), egui::Sense::click());
+                            let settings_btn_rect = ui
+                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
+                                .0;
+                            let settings_resp = ui.interact(
+                                settings_btn_rect,
+                                ui.id().with("settings_btn"),
+                                egui::Sense::click(),
+                            );
 
                             let settings_fill = if settings_resp.clicked() {
                                 ui.visuals().widgets.active.bg_fill
@@ -854,21 +675,24 @@ impl PopupApp {
                                 ui.visuals().widgets.noninteractive.bg_stroke
                             };
 
-                            ui.painter().rect(settings_btn_rect, egui::Rounding::same(8.0), settings_fill, settings_stroke);
+                            ui.painter().rect(
+                                settings_btn_rect,
+                                egui::Rounding::same(8.0),
+                                settings_fill,
+                                settings_stroke,
+                            );
 
                             let settings_color = ui.visuals().text_color();
 
                             let settings_icon_rect = egui::Rect::from_center_size(
                                 settings_btn_rect.center(),
-                                egui::vec2(16.0, 16.0)
+                                egui::vec2(16.0, 16.0),
                             );
-                            paint_settings_icon(ui, settings_icon_rect, settings_color);
+                            theme::paint_settings_icon(ui, settings_icon_rect, settings_color);
 
                             if settings_resp.clicked() {
                                 let path = Config::config_path();
-                                let _ = std::process::Command::new("xdg-open")
-                                    .arg(path)
-                                    .spawn();
+                                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
                             }
                         }
                     });
@@ -886,7 +710,7 @@ impl PopupApp {
         let card_id = ui.make_persistent_id(format!("row_{}", row));
         let rect = egui::Rect::from_min_size(
             ui.next_widget_position(),
-            egui::vec2(ui.available_width(), row_height)
+            egui::vec2(ui.available_width(), row_height),
         );
         let response = ui.interact(rect, card_id, egui::Sense::click());
 
@@ -907,45 +731,36 @@ impl PopupApp {
             self.scroll_to_selected_once = false;
         }
 
+        let theme = self.theme_colors.as_ref();
+
         let fill = if is_selected {
-            if !self.config.general.enable_theming {
-                ui.visuals().selection.bg_fill
-            } else if ui.visuals().dark_mode {
-                egui::Color32::from_rgb(30, 27, 75) // Indigo 950
-            } else {
-                egui::Color32::from_rgb(224, 231, 255) // Indigo 100
-            }
+            theme.map_or_else(|| ui.visuals().selection.bg_fill, |t| t.card_bg_selected)
         } else if response.hovered() {
-            if !self.config.general.enable_theming {
-                ui.visuals().widgets.hovered.bg_fill
-            } else if ui.visuals().dark_mode {
-                egui::Color32::from_rgb(20, 26, 38) // Slate 900
-            } else {
-                egui::Color32::from_rgb(241, 245, 249) // Slate 100
-            }
+            theme.map_or_else(
+                || ui.visuals().widgets.hovered.bg_fill,
+                |t| t.card_bg_hovered,
+            )
         } else {
-            if !self.config.general.enable_theming {
-                ui.visuals().widgets.noninteractive.bg_fill
-            } else if ui.visuals().dark_mode {
-                egui::Color32::from_rgb(15, 20, 30) // Slate 950
-            } else {
-                egui::Color32::from_rgb(255, 255, 255) // White
-            }
+            theme.map_or_else(
+                || ui.visuals().widgets.noninteractive.bg_fill,
+                |t| t.card_bg,
+            )
         };
 
         let stroke = if is_selected {
-            if !self.config.general.enable_theming {
-                egui::Stroke::new(1.5, ui.visuals().selection.bg_fill)
-            } else {
-                egui::Stroke::new(1.5, egui::Color32::from_rgb(99, 102, 241)) // Indigo 500
-            }
+            theme.map_or_else(
+                || egui::Stroke::new(1.5, ui.visuals().selection.bg_fill),
+                |t| egui::Stroke::new(1.5, t.card_stroke_selected),
+            )
         } else {
             egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
         };
 
+        let rounding = theme.map_or(0.0, |t| t.card_rounding);
+
         egui::Frame::none()
             .fill(fill)
-            .rounding(if self.config.general.enable_theming { 12.0 } else { 0.0 })
+            .rounding(rounding)
             .stroke(stroke)
             .inner_margin(egui::Margin::symmetric(14.0, 10.0))
             .show(ui, |ui| {
@@ -957,142 +772,198 @@ impl PopupApp {
                     let bar_height = 24.0;
                     let bar_rect = egui::Rect::from_center_size(
                         egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
-                        egui::vec2(bar_width, bar_height)
+                        egui::vec2(bar_width, bar_height),
                     );
                     ui.painter().rect_filled(
                         bar_rect,
                         egui::Rounding::same(2.0),
-                        egui::Color32::from_rgb(99, 102, 241) // Indigo 500
+                        self.theme_colors
+                            .as_ref()
+                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
                     );
                 }
-            match &item {
-                ClipItem::Text { content, timestamp } => {
-                    ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            draw_icon_badge(ui, "text", is_selected, self.config.general.enable_theming);
-                            ui.add_space(8.0);
+                match &item {
+                    ClipItem::Text { content, timestamp } => {
+                        ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    theme::draw_icon_badge(
+                                        ui,
+                                        "text",
+                                        is_selected,
+                                        self.theme_colors.as_ref(),
+                                    );
+                                    ui.add_space(8.0);
 
-                            let available_width = (ui.available_width() - 40.0).max(120.0);
-                            ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
-                                ui.vertical(|ui| {
-                                    let content_height = 35.0;
-                                    let available_h = ui.available_height();
-                                    if available_h > content_height {
-                                        ui.add_space((available_h - content_height) / 2.0);
+                                    let available_width = (ui.available_width() - 40.0).max(120.0);
+                                    ui.allocate_ui(
+                                        egui::vec2(available_width, row_height - 20.0),
+                                        |ui| {
+                                            ui.vertical(|ui| {
+                                                let content_height = 35.0;
+                                                let available_h = ui.available_height();
+                                                if available_h > content_height {
+                                                    ui.add_space(
+                                                        (available_h - content_height) / 2.0,
+                                                    );
+                                                }
+                                                ui.set_width(available_width);
+                                                let preview = self
+                                                    .cached_previews
+                                                    .get(orig_idx)
+                                                    .cloned()
+                                                    .unwrap_or_else(|| {
+                                                        preview_text(content, self.preview_chars)
+                                                    });
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        egui::RichText::new(preview)
+                                                            .size(15.0)
+                                                            .monospace()
+                                                            .strong(),
+                                                    )
+                                                    .truncate(),
+                                                );
+                                                ui.add_space(2.0);
+                                                let char_count = self
+                                                    .cached_char_counts
+                                                    .get(orig_idx)
+                                                    .copied()
+                                                    .unwrap_or_else(|| content.chars().count());
+                                                ui.label(
+                                                    egui::RichText::new(format!(
+                                                        "{} chars · {}",
+                                                        char_count,
+                                                        relative_time(*timestamp)
+                                                    ))
+                                                    .size(12.5)
+                                                    .weak(),
+                                                );
+                                            });
+                                        },
+                                    );
+
+                                    if row < 9 {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                let shortcut_color = if is_selected {
+                                                    self.theme_colors.as_ref().map_or(
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            255, 255, 255, 180,
+                                                        ),
+                                                        |t| t.shortcut_color,
+                                                    )
+                                                } else {
+                                                    ui.visuals().weak_text_color()
+                                                };
+                                                ui.label(
+                                                    egui::RichText::new(format!("^{}", row + 1))
+                                                        .size(13.0)
+                                                        .monospace()
+                                                        .color(shortcut_color),
+                                                );
+                                            },
+                                        );
                                     }
-                                    ui.set_width(available_width);
-                                    let preview = self.cached_previews.get(orig_idx)
-                                        .cloned()
-                                        .unwrap_or_else(|| preview_text(content, self.preview_chars));
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(preview)
-                                                .size(15.0)
-                                                .monospace()
-                                                .strong()
-                                        )
-                                        .truncate()
-                                    );
-                                    ui.add_space(2.0);
-                                    let char_count = self.cached_char_counts.get(orig_idx)
-                                        .copied()
-                                        .unwrap_or_else(|| content.chars().count());
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} chars · {}",
-                                            char_count,
-                                            relative_time(*timestamp)
-                                        ))
-                                        .size(12.5)
-                                        .weak(),
-                                    );
-                                });
-                            });
-
-                            if row < 9 {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let shortcut_color = if is_selected {
-                                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180)
-                                    } else {
-                                        ui.visuals().weak_text_color()
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(format!("^{}", row + 1))
-                                            .size(13.0)
-                                            .monospace()
-                                            .color(shortcut_color),
-                                    );
-                                });
-                            }
+                                },
+                            );
                         });
-                    });
-                }
-                ClipItem::Image {
-                    width,
-                    height,
-                    timestamp,
-                    filename,
-                    ..
-                } => {
-                    ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            if let Some(tex) = self.textures.get(filename) {
-                                let img = egui::Image::new(tex)
-                                    .max_size(egui::vec2(36.0, 36.0))
-                                    .rounding(egui::Rounding::same(6.0));
-                                ui.add(img);
-                            } else {
-                                draw_icon_badge(ui, "image", is_selected, self.config.general.enable_theming);
-                            }
-                            ui.add_space(12.0);
-
-                            let available_width = (ui.available_width() - 40.0).max(120.0);
-                            ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
-                                ui.vertical(|ui| {
-                                    let content_height = 35.0;
-                                    let available_h = ui.available_height();
-                                    if available_h > content_height {
-                                        ui.add_space((available_h - content_height) / 2.0);
+                    }
+                    ClipItem::Image {
+                        width,
+                        height,
+                        timestamp,
+                        filename,
+                        ..
+                    } => {
+                        ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    if let Some(tex) = self.textures.get(filename) {
+                                        let img = egui::Image::new(tex)
+                                            .max_size(egui::vec2(36.0, 36.0))
+                                            .rounding(egui::Rounding::same(6.0));
+                                        ui.add(img);
+                                    } else {
+                                        theme::draw_icon_badge(
+                                            ui,
+                                            "image",
+                                            is_selected,
+                                            self.theme_colors.as_ref(),
+                                        );
                                     }
-                                    ui.set_width(available_width);
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(format!("Image {}×{}", width, height))
-                                                .size(15.0)
-                                                .strong()
-                                        )
-                                        .truncate()
-                                    );
-                                    ui.add_space(2.0);
-                                    let file_size = self.cached_file_sizes.get(filename).copied();
-                                    ui.label(
-                                        egui::RichText::new(image_subtitle_cached(filename, *timestamp, file_size))
-                                            .size(12.5)
-                                            .weak(),
-                                    );
-                                });
-                            });
+                                    ui.add_space(12.0);
 
-                            if row < 9 {
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let shortcut_color = if is_selected {
-                                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180)
-                                    } else {
-                                        ui.visuals().weak_text_color()
-                                    };
-                                    ui.label(
-                                        egui::RichText::new(format!("^{}", row + 1))
-                                            .size(13.0)
-                                            .monospace()
-                                            .color(shortcut_color),
+                                    let available_width = (ui.available_width() - 40.0).max(120.0);
+                                    ui.allocate_ui(
+                                        egui::vec2(available_width, row_height - 20.0),
+                                        |ui| {
+                                            ui.vertical(|ui| {
+                                                let content_height = 35.0;
+                                                let available_h = ui.available_height();
+                                                if available_h > content_height {
+                                                    ui.add_space(
+                                                        (available_h - content_height) / 2.0,
+                                                    );
+                                                }
+                                                ui.set_width(available_width);
+                                                ui.add(
+                                                    egui::Label::new(
+                                                        egui::RichText::new(format!(
+                                                            "Image {}×{}",
+                                                            width, height
+                                                        ))
+                                                        .size(15.0)
+                                                        .strong(),
+                                                    )
+                                                    .truncate(),
+                                                );
+                                                ui.add_space(2.0);
+                                                let file_size =
+                                                    self.cached_file_sizes.get(filename).copied();
+                                                ui.label(
+                                                    egui::RichText::new(image_subtitle_cached(
+                                                        filename, *timestamp, file_size,
+                                                    ))
+                                                    .size(12.5)
+                                                    .weak(),
+                                                );
+                                            });
+                                        },
                                     );
-                                });
-                            }
+
+                                    if row < 9 {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                let shortcut_color = if is_selected {
+                                                    self.theme_colors.as_ref().map_or(
+                                                        egui::Color32::from_rgba_unmultiplied(
+                                                            255, 255, 255, 180,
+                                                        ),
+                                                        |t| t.shortcut_color,
+                                                    )
+                                                } else {
+                                                    ui.visuals().weak_text_color()
+                                                };
+                                                ui.label(
+                                                    egui::RichText::new(format!("^{}", row + 1))
+                                                        .size(13.0)
+                                                        .monospace()
+                                                        .color(shortcut_color),
+                                                );
+                                            },
+                                        );
+                                    }
+                                },
+                            );
                         });
-                    });
+                    }
                 }
-            }
-        });
+            });
 
         response.clicked()
     }
@@ -1113,32 +984,31 @@ impl PopupApp {
             .show(ctx, |ui| {
                 let screen_rect = ctx.screen_rect();
                 let backdrop_response = ui.allocate_rect(screen_rect, egui::Sense::click());
-                
+
                 // Dim background
-                let bg_color = egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220);
-                ui.painter().rect_filled(
-                    screen_rect,
-                    egui::Rounding::same(if self.config.general.enable_theming { 16.0 } else { 0.0 }),
-                    bg_color
+                let bg_color = self.theme_colors.as_ref().map_or(
+                    egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
+                    |t| t.lightbox_overlay,
                 );
+                let rounding = self.theme_colors.as_ref().map_or(0.0, |t| t.card_rounding);
+                ui.painter()
+                    .rect_filled(screen_rect, egui::Rounding::same(rounding), bg_color);
 
                 // Calculate original preview size (fits screen with padding)
-                let max_img_size = egui::vec2(
-                    screen_rect.width() - 80.0,
-                    screen_rect.height() - 100.0,
-                );
-                
+                let max_img_size =
+                    egui::vec2(screen_rect.width() - 80.0, screen_rect.height() - 100.0);
+
                 let img_size = texture.size_vec2();
                 let scale = (max_img_size.x / img_size.x)
                     .min(max_img_size.y / img_size.y)
                     .min(1.0);
                 let scaled_size = img_size * scale;
-                
+
                 // Apply zoom and pan to get final image rect
                 let current_size = scaled_size * self.lightbox_zoom;
                 let current_center = screen_rect.center() + self.lightbox_pan;
                 let image_rect = egui::Rect::from_center_size(current_center, current_size);
-                
+
                 // Draw image
                 let img = egui::Image::new(&texture)
                     .fit_to_exact_size(current_size)
@@ -1146,12 +1016,16 @@ impl PopupApp {
                 ui.put(image_rect, img);
 
                 // Interact with image for panning/double-clicking
-                let image_response = ui.interact(image_rect, egui::Id::new("lightbox_image_interact"), egui::Sense::click_and_drag());
-                
+                let image_response = ui.interact(
+                    image_rect,
+                    egui::Id::new("lightbox_image_interact"),
+                    egui::Sense::click_and_drag(),
+                );
+
                 if image_response.dragged() {
                     self.lightbox_pan += image_response.drag_delta();
                 }
-                
+
                 if image_response.double_clicked() {
                     self.lightbox_zoom = 1.0;
                     self.lightbox_pan = egui::Vec2::ZERO;
@@ -1168,21 +1042,31 @@ impl PopupApp {
 
                 // Close button at top-right of the screen
                 let btn_size = egui::vec2(28.0, 28.0);
-                let close_btn_pos = egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
+                let close_btn_pos =
+                    egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
                 let close_rect = egui::Rect::from_center_size(close_btn_pos, btn_size);
-                
-                let close_response = ui.interact(close_rect, egui::Id::new("lightbox_close_btn"), egui::Sense::click());
+
+                let close_response = ui.interact(
+                    close_rect,
+                    egui::Id::new("lightbox_close_btn"),
+                    egui::Sense::click(),
+                );
                 let btn_bg = if close_response.clicked() {
                     ui.visuals().widgets.active.bg_fill
                 } else if close_response.hovered() {
                     ui.visuals().widgets.hovered.bg_fill
                 } else {
-                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30)
+                    self.theme_colors.as_ref().map_or(
+                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+                        |t| t.lightbox_close_btn_bg,
+                    )
                 };
-                
-                ui.painter().circle_filled(close_rect.center(), 14.0, btn_bg);
-                let close_icon_rect = egui::Rect::from_center_size(close_rect.center(), egui::vec2(10.0, 10.0));
-                paint_close_icon(ui, close_icon_rect, egui::Color32::WHITE);
+
+                ui.painter()
+                    .circle_filled(close_rect.center(), 14.0, btn_bg);
+                let close_icon_rect =
+                    egui::Rect::from_center_size(close_rect.center(), egui::vec2(10.0, 10.0));
+                theme::paint_close_icon(ui, close_icon_rect, egui::Color32::WHITE);
 
                 if close_response.clicked() {
                     close_preview = true;
@@ -1191,72 +1075,110 @@ impl PopupApp {
                 // Control bar panel at the bottom center of the screen
                 let control_bar_rect = egui::Rect::from_center_size(
                     egui::pos2(screen_rect.center().x, screen_rect.bottom() - 50.0),
-                    egui::vec2(250.0, 36.0)
+                    egui::vec2(250.0, 36.0),
                 );
-                
-                let control_bg = if self.config.general.enable_theming {
-                    egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200) // slate-800
-                } else {
-                    ui.visuals().widgets.inactive.bg_fill
-                };
-                
+
+                let control_bg = self
+                    .theme_colors
+                    .as_ref()
+                    .map_or(ui.visuals().widgets.inactive.bg_fill, |t| {
+                        t.lightbox_control_bg
+                    });
+
                 ui.painter().rect(
                     control_bar_rect,
                     egui::Rounding::same(18.0),
                     control_bg,
-                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
                 );
-                
+
                 ui.allocate_ui_at_rect(control_bar_rect, |ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     ui.horizontal_centered(|ui| {
                         ui.add_space(16.0);
-                        
+
                         // Zoom Out (-)
-                        let (minus_rect, minus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
-                        let minus_color = if minus_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        let (minus_rect, minus_resp) =
+                            ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                        let minus_color = if minus_resp.hovered() {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::WHITE, |t| t.lightbox_icon_hovered)
+                        } else {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::from_rgb(200, 200, 200), |t| t.lightbox_icon)
+                        };
                         let minus_stroke = egui::Stroke::new(2.0, minus_color);
                         ui.painter().line_segment(
-                            [egui::pos2(minus_rect.left() + 6.0, minus_rect.center().y), egui::pos2(minus_rect.right() - 6.0, minus_rect.center().y)],
-                            minus_stroke
+                            [
+                                egui::pos2(minus_rect.left() + 6.0, minus_rect.center().y),
+                                egui::pos2(minus_rect.right() - 6.0, minus_rect.center().y),
+                            ],
+                            minus_stroke,
                         );
                         if minus_resp.clicked() {
                             self.lightbox_zoom = (self.lightbox_zoom / 1.2).clamp(0.2, 10.0);
                             ctx.request_repaint();
                         }
-                        
+
                         ui.add_space(6.0);
-                        
+
                         // Zoom percentage / Reset
-                        let percent_text = format!("{}%", (self.lightbox_zoom * 100.0).round() as i32);
-                        let (lbl_rect, lbl_resp) = ui.allocate_exact_size(egui::vec2(50.0, 24.0), egui::Sense::click());
-                        let text_color = if lbl_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        let percent_text =
+                            format!("{}%", (self.lightbox_zoom * 100.0).round() as i32);
+                        let (lbl_rect, lbl_resp) =
+                            ui.allocate_exact_size(egui::vec2(50.0, 24.0), egui::Sense::click());
+                        let text_color = if lbl_resp.hovered() {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::WHITE, |t| t.lightbox_icon_hovered)
+                        } else {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::from_rgb(200, 200, 200), |t| t.lightbox_icon)
+                        };
                         ui.painter().text(
                             lbl_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             percent_text,
                             egui::FontId::proportional(13.0),
-                            text_color
+                            text_color,
                         );
                         if lbl_resp.clicked() {
                             self.lightbox_zoom = 1.0;
                             self.lightbox_pan = egui::Vec2::ZERO;
                             ctx.request_repaint();
                         }
-                        
+
                         ui.add_space(6.0);
-                        
+
                         // Zoom In (+)
-                        let (plus_rect, plus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
-                        let plus_color = if plus_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        let (plus_rect, plus_resp) =
+                            ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                        let plus_color = if plus_resp.hovered() {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::WHITE, |t| t.lightbox_icon_hovered)
+                        } else {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::from_rgb(200, 200, 200), |t| t.lightbox_icon)
+                        };
                         let plus_stroke = egui::Stroke::new(2.0, plus_color);
                         ui.painter().line_segment(
-                            [egui::pos2(plus_rect.left() + 6.0, plus_rect.center().y), egui::pos2(plus_rect.right() - 6.0, plus_rect.center().y)],
-                            plus_stroke
+                            [
+                                egui::pos2(plus_rect.left() + 6.0, plus_rect.center().y),
+                                egui::pos2(plus_rect.right() - 6.0, plus_rect.center().y),
+                            ],
+                            plus_stroke,
                         );
                         ui.painter().line_segment(
-                            [egui::pos2(plus_rect.center().x, plus_rect.top() + 6.0), egui::pos2(plus_rect.center().x, plus_rect.bottom() - 6.0)],
-                            plus_stroke
+                            [
+                                egui::pos2(plus_rect.center().x, plus_rect.top() + 6.0),
+                                egui::pos2(plus_rect.center().x, plus_rect.bottom() - 6.0),
+                            ],
+                            plus_stroke,
                         );
                         if plus_resp.clicked() {
                             self.lightbox_zoom = (self.lightbox_zoom * 1.2).clamp(0.2, 10.0);
@@ -1266,15 +1188,35 @@ impl PopupApp {
                         ui.add_space(16.0);
 
                         // Separator
-                        let (sep_rect, _) = ui.allocate_exact_size(egui::vec2(1.0, 16.0), egui::Sense { click: false, drag: false, focusable: false });
-                        ui.painter().vline(sep_rect.center().x, sep_rect.y_range(), egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 50)));
-                        
+                        let (sep_rect, _) = ui.allocate_exact_size(
+                            egui::vec2(1.0, 16.0),
+                            egui::Sense {
+                                click: false,
+                                drag: false,
+                                focusable: false,
+                            },
+                        );
+                        ui.painter().vline(
+                            sep_rect.center().x,
+                            sep_rect.y_range(),
+                            egui::Stroke::new(
+                                1.0,
+                                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 50),
+                            ),
+                        );
+
                         ui.add_space(16.0);
 
                         // Open / Open With Button
-                        let open_btn_rect = ui.allocate_exact_size(egui::vec2(75.0, 24.0), egui::Sense::click()).0;
-                        let open_resp = ui.interact(open_btn_rect, ui.id().with("open_btn"), egui::Sense::click());
-                        
+                        let open_btn_rect = ui
+                            .allocate_exact_size(egui::vec2(75.0, 24.0), egui::Sense::click())
+                            .0;
+                        let open_resp = ui.interact(
+                            open_btn_rect,
+                            ui.id().with("open_btn"),
+                            egui::Sense::click(),
+                        );
+
                         let open_bg = if open_resp.clicked() {
                             egui::Color32::from_rgba_unmultiplied(255, 255, 255, 60)
                         } else if open_resp.hovered() {
@@ -1282,30 +1224,42 @@ impl PopupApp {
                         } else {
                             egui::Color32::TRANSPARENT
                         };
-                        
-                        ui.painter().rect_filled(open_btn_rect, egui::Rounding::same(6.0), open_bg);
-                        
-                        let icon_color = if open_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+
+                        ui.painter()
+                            .rect_filled(open_btn_rect, egui::Rounding::same(6.0), open_bg);
+
+                        let icon_color = if open_resp.hovered() {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::WHITE, |t| t.lightbox_icon_hovered)
+                        } else {
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::from_rgb(200, 200, 200), |t| t.lightbox_icon)
+                        };
 
                         // Draw Icon via painter
                         let icon_rect = egui::Rect::from_min_size(
                             egui::pos2(open_btn_rect.left() + 12.5, open_btn_rect.center().y - 7.0),
-                            egui::vec2(14.0, 14.0)
+                            egui::vec2(14.0, 14.0),
                         );
-                        paint_open_icon(ui, icon_rect, icon_color);
+                        theme::paint_open_icon(ui, icon_rect, icon_color);
 
                         // Draw Text via painter
-                        let text_pos = egui::pos2(open_btn_rect.left() + 32.5, open_btn_rect.center().y);
+                        let text_pos =
+                            egui::pos2(open_btn_rect.left() + 32.5, open_btn_rect.center().y);
                         ui.painter().text(
                             text_pos,
                             egui::Align2::LEFT_CENTER,
                             "Open",
                             egui::FontId::proportional(13.0),
-                            icon_color
+                            icon_color,
                         );
-                        
+
                         if open_resp.clicked() {
-                            let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
+                            let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(
+                                filename.clone(),
+                            ));
                         }
                     });
                 });
@@ -1399,8 +1353,12 @@ impl eframe::App for PopupApp {
                 Some(crate::opener::OpenTarget::Image(filename.clone()))
             } else if let Some(&idx) = self.filtered.get(self.selected) {
                 match self.all.get(idx) {
-                    Some(ClipItem::Text { content, .. }) => Some(crate::opener::OpenTarget::Text(content.clone())),
-                    Some(ClipItem::Image { filename, .. }) => Some(crate::opener::OpenTarget::Image(filename.clone())),
+                    Some(ClipItem::Text { content, .. }) => {
+                        Some(crate::opener::OpenTarget::Text(content.clone()))
+                    }
+                    Some(ClipItem::Image { filename, .. }) => {
+                        Some(crate::opener::OpenTarget::Image(filename.clone()))
+                    }
                     None => None,
                 }
             } else {
@@ -1422,11 +1380,16 @@ impl eframe::App for PopupApp {
             ctx.request_repaint();
         }
 
+        let panel_rounding = self.theme_colors.as_ref().map_or(0.0, |t| t.card_rounding);
         egui::CentralPanel::default()
-            .frame(egui::Frame::none()
-                .fill(ctx.style().visuals.window_fill)
-                .rounding(if self.config.general.enable_theming { 16.0 } else { 0.0 })
-                .stroke(egui::Stroke::new(1.0, ctx.style().visuals.widgets.noninteractive.bg_stroke.color))
+            .frame(
+                egui::Frame::none()
+                    .fill(ctx.style().visuals.window_fill)
+                    .rounding(panel_rounding)
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        ctx.style().visuals.widgets.noninteractive.bg_stroke.color,
+                    )),
             )
             .show(ctx, |ui| {
                 if self.config.footer.enable {
@@ -1450,7 +1413,7 @@ fn draw_empty_state(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.vertical_centered(|ui| {
         ui.add_space(100.0);
         let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
-        paint_text_icon(ui, icon_rect, ui.visuals().weak_text_color());
+        theme::paint_text_icon(ui, icon_rect, ui.visuals().weak_text_color());
 
         ui.add_space(16.0);
         ui.label(egui::RichText::new(title).heading().strong());
@@ -1467,11 +1430,14 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
 
     match item {
         ClipItem::Text { content, .. } => content.to_lowercase().contains(q),
-        ClipItem::Image { width, height, filename, .. } => {
-            format!("{}×{} {}x{} {}", width, height, width, height, filename)
-                .to_lowercase()
-                .contains(q)
-        }
+        ClipItem::Image {
+            width,
+            height,
+            filename,
+            ..
+        } => format!("{}×{} {}x{} {}", width, height, width, height, filename)
+            .to_lowercase()
+            .contains(q),
     }
 }
 
@@ -1508,7 +1474,12 @@ fn image_subtitle_cached(filename: &str, ts: u64, cached_size: Option<u64>) -> S
         if size_str.is_empty() {
             format!("{} · {}", filename, relative_time_with_now(ts, now))
         } else {
-            format!("{} · {} · {}", filename, size_str, relative_time_with_now(ts, now))
+            format!(
+                "{} · {} · {}",
+                filename,
+                size_str,
+                relative_time_with_now(ts, now)
+            )
         }
     }
 }
@@ -1538,7 +1509,12 @@ fn image_subtitle_with_now(filename: &str, ts: u64, now: u64) -> String {
         if size_str.is_empty() {
             format!("{} · {}", filename, relative_time_with_now(ts, now))
         } else {
-            format!("{} · {} · {}", filename, size_str, relative_time_with_now(ts, now))
+            format!(
+                "{} · {} · {}",
+                filename,
+                size_str,
+                relative_time_with_now(ts, now)
+            )
         }
     }
 }
@@ -1584,7 +1560,10 @@ mod tests {
 
     #[test]
     fn item_query_matches_text_and_image_metadata() {
-        let text = ClipItem::Text { content: "Hello world".into(), timestamp: 1 };
+        let text = ClipItem::Text {
+            content: "Hello world".into(),
+            timestamp: 1,
+        };
         let img = ClipItem::Image {
             width: 640,
             height: 480,
@@ -1601,7 +1580,10 @@ mod tests {
     #[test]
     fn image_subtitle_handles_empty_filename() {
         assert_eq!(image_subtitle_with_now("", 90, 100), "10s ago");
-        assert_eq!(image_subtitle_with_now("shot.png", 90, 100), "shot.png · 10s ago");
+        assert_eq!(
+            image_subtitle_with_now("shot.png", 90, 100),
+            "shot.png · 10s ago"
+        );
     }
 
     #[test]

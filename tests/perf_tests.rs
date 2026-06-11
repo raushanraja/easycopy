@@ -96,9 +96,7 @@ fn perf_partial_hash_vs_full() {
     use std::hash::{Hash, Hasher};
 
     // Simulate a 1920×1080 RGBA image (~8 MB)
-    let data: Vec<u8> = (0u64..1920 * 1080 * 4)
-        .map(|i| (i % 256) as u8)
-        .collect();
+    let data: Vec<u8> = (0u64..1920 * 1080 * 4).map(|i| (i % 256) as u8).collect();
     eprintln!("[perf] test image buffer size: {} bytes", data.len());
 
     // Full hash (old approach)
@@ -244,8 +242,7 @@ fn perf_ipc_roundtrip() {
     let start = Instant::now();
     for _ in 0..iterations {
         // Connect, send, close — measures full roundtrip
-        let mut stream =
-            std::os::unix::net::UnixStream::connect(&sock_path).unwrap();
+        let mut stream = std::os::unix::net::UnixStream::connect(&sock_path).unwrap();
         use std::io::Write;
         let json = serde_json::to_vec(&item).unwrap();
         stream.write_all(&json).unwrap();
@@ -273,9 +270,5 @@ fn perf_ipc_roundtrip() {
         received,
         iterations
     );
-    assert!(
-        elapsed.as_millis() < 2000,
-        "IPC too slow: {:?}",
-        elapsed
-    );
+    assert!(elapsed.as_millis() < 2000, "IPC too slow: {:?}", elapsed);
 }

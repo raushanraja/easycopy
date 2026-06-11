@@ -57,7 +57,8 @@ fn save_thumbnail_to_dir(dir: &Path, filename: &str, img: &image::RgbaImage) -> 
     let dyn_img = image::DynamicImage::ImageRgba8(img.clone());
     let thumb = dyn_img.resize(52, 52, image::imageops::FilterType::Triangle);
     let thumb_path = dir.join(format!("thumb_{}", filename));
-    thumb.save(&thumb_path)
+    thumb
+        .save(&thumb_path)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     Ok(())
 }
@@ -72,11 +73,12 @@ pub fn save_image_to_dir(dir: &Path, data: &[u8], w: u32, h: u32) -> Result<Stri
     let hash = simple_hash(data) & 0xFFF;
     let filename = format!("img_{}_{:03x}.png", ts, hash);
     let filepath = dir.join(&filename);
-    let img = image::RgbaImage::from_raw(w, h, data.to_vec())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
+    let img = image::RgbaImage::from_raw(w, h, data.to_vec()).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
+    })?;
     img.save(&filepath)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    
+
     // Save thumbnail too
     let _ = save_thumbnail_to_dir(dir, &filename, &img);
 
@@ -95,8 +97,9 @@ pub fn save_image_owned_to_dir(dir: &Path, data: Vec<u8>, w: u32, h: u32) -> Res
     let hash = simple_hash(&data) & 0xFFF;
     let filename = format!("img_{}_{:03x}.png", ts, hash);
     let filepath = dir.join(&filename);
-    let img = image::RgbaImage::from_raw(w, h, data)
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data"))?;
+    let img = image::RgbaImage::from_raw(w, h, data).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
+    })?;
     img.save(&filepath)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
@@ -159,7 +162,9 @@ pub fn cleanup_orphaned_in_dir(dir: &Path, items: &VecDeque<ClipItem>) -> Result
         if !path.is_file() {
             continue;
         }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
         let base_name = name.strip_prefix("thumb_").unwrap_or(name);
         if !known.contains(base_name) {
             std::fs::remove_file(path)?;
@@ -181,7 +186,10 @@ mod tests {
     use super::*;
 
     fn text(s: &str, ts: u64) -> ClipItem {
-        ClipItem::Text { content: s.into(), timestamp: ts }
+        ClipItem::Text {
+            content: s.into(),
+            timestamp: ts,
+        }
     }
 
     fn image(filename: &str, ts: u64) -> ClipItem {

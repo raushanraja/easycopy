@@ -5,10 +5,7 @@ use std::collections::VecDeque;
 #[serde(tag = "type")]
 pub enum ClipItem {
     #[serde(rename = "text")]
-    Text {
-        content: String,
-        timestamp: u64,
-    },
+    Text { content: String, timestamp: u64 },
     #[serde(rename = "image")]
     Image {
         width: u32,
@@ -57,14 +54,16 @@ impl HistoryManager {
         // Skip if it matches the current front item
         if let Some(front) = self.items.front() {
             match (&item, front) {
-                (
-                    ClipItem::Text { content: a, .. },
-                    ClipItem::Text { content: b, .. },
-                ) if a == b => return false,
-                (
-                    ClipItem::Image { filename: a, .. },
-                    ClipItem::Image { filename: b, .. },
-                ) if !a.is_empty() && a == b => return false,
+                (ClipItem::Text { content: a, .. }, ClipItem::Text { content: b, .. })
+                    if a == b =>
+                {
+                    return false
+                }
+                (ClipItem::Image { filename: a, .. }, ClipItem::Image { filename: b, .. })
+                    if !a.is_empty() && a == b =>
+                {
+                    return false
+                }
                 _ => {}
             }
         }

@@ -98,8 +98,14 @@ fn mixed_limits_are_enforced_independently() {
 
     assert_eq!(hm.items().iter().filter(|i| i.is_text()).count(), 2);
     assert_eq!(hm.items().iter().filter(|i| i.is_image()).count(), 2);
-    assert!(!hm.items().iter().any(|i| matches!(i, ClipItem::Text { content, .. } if content == "t1")));
-    assert!(!hm.items().iter().any(|i| matches!(i, ClipItem::Image { filename, .. } if filename == "i1.png")));
+    assert!(!hm
+        .items()
+        .iter()
+        .any(|i| matches!(i, ClipItem::Text { content, .. } if content == "t1")));
+    assert!(!hm
+        .items()
+        .iter()
+        .any(|i| matches!(i, ClipItem::Image { filename, .. } if filename == "i1.png")));
 }
 
 #[test]

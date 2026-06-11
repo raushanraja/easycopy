@@ -6,3 +6,4 @@ pub mod ipc;
 pub mod opener;
 pub mod popup;
 pub mod storage;
+pub mod theme;

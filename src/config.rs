@@ -1,26 +1,64 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-fn default_max_text_items() -> usize { 200 }
-fn default_max_image_items() -> usize { 50 }
-fn default_hotkey() -> String { "Ctrl+Alt+V".to_string() }
-fn default_auto_paste() -> bool { true }
-fn default_poll_interval_ms() -> u64 { 500 }
-fn default_popup_width() -> f32 { 640.0 }
-fn default_popup_height() -> f32 { 720.0 }
-fn default_preview_chars() -> usize { 220 }
-fn default_paste_delay_ms() -> u64 { 120 }
-fn default_theme() -> String { "dark".to_string() }
-fn default_hide_main_header() -> bool { false }
-fn default_hide_secondary_header() -> bool { false }
-fn default_enable_theming() -> bool { true }
-fn default_enable_clipping() -> bool { true }
-fn default_close_on_focus_out() -> bool { true }
+fn default_max_text_items() -> usize {
+    200
+}
+fn default_max_image_items() -> usize {
+    50
+}
+fn default_hotkey() -> String {
+    "Ctrl+Alt+V".to_string()
+}
+fn default_auto_paste() -> bool {
+    true
+}
+fn default_poll_interval_ms() -> u64 {
+    500
+}
+fn default_popup_width() -> f32 {
+    640.0
+}
+fn default_popup_height() -> f32 {
+    720.0
+}
+fn default_preview_chars() -> usize {
+    220
+}
+fn default_paste_delay_ms() -> u64 {
+    120
+}
+fn default_theme() -> String {
+    "dark".to_string()
+}
+fn default_hide_main_header() -> bool {
+    false
+}
+fn default_hide_secondary_header() -> bool {
+    false
+}
+fn default_enable_theming() -> bool {
+    true
+}
+fn default_enable_clipping() -> bool {
+    true
+}
+fn default_close_on_focus_out() -> bool {
+    true
+}
 
-fn default_footer_enable() -> bool { true }
-fn default_footer_show_help() -> bool { true }
-fn default_footer_show_clear() -> bool { true }
-fn default_footer_show_settings() -> bool { true }
+fn default_footer_enable() -> bool {
+    true
+}
+fn default_footer_show_help() -> bool {
+    true
+}
+fn default_footer_show_clear() -> bool {
+    true
+}
+fn default_footer_show_settings() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]

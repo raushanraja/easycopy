@@ -60,8 +60,8 @@ pub fn send_paste_request(item: &ClipItem) -> std::io::Result<()> {
     let path = socket_path();
     let mut stream = UnixStream::connect(&path)?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-    let json = serde_json::to_vec(item)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json =
+        serde_json::to_vec(item).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     stream.write_all(&json)?;
     stream.shutdown(std::net::Shutdown::Write)?;
     Ok(())

@@ -1,7 +1,7 @@
+use crate::config::Config;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
-use crate::config::Config;
 
 #[derive(Debug, Clone)]
 pub enum OpenTarget {
@@ -22,16 +22,12 @@ pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
                 let mut file = File::create(&temp_path)?;
                 file.write_all(content.as_bytes())?;
             }
-            Command::new("xdg-open")
-                .arg(temp_path)
-                .spawn()?;
+            Command::new("xdg-open").arg(temp_path).spawn()?;
             Ok(())
         }
         OpenTarget::Image(filename) => {
             let path = Config::images_dir().join(filename);
-            Command::new("xdg-open")
-                .arg(path)
-                .spawn()?;
+            Command::new("xdg-open").arg(path).spawn()?;
             Ok(())
         }
     }
