@@ -12,6 +12,11 @@ pub fn set_debug_logging(enabled: bool) {
     DEBUG_LOGGING.store(enabled, Ordering::Relaxed);
 }
 
+/// Check whether debug logging is enabled.
+pub fn is_debug_logging() -> bool {
+    DEBUG_LOGGING.load(Ordering::Relaxed)
+}
+
 /// Emit a diagnostic message only when debug logging is enabled.
 macro_rules! debug_log {
     ($($arg:tt)*) => {{

@@ -713,10 +713,12 @@ dependencies = [
  "egui",
  "global-hotkey",
  "image",
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
  "toml",
+ "x11rb",
 ]
 
 [[package]]

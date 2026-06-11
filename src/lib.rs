@@ -7,3 +7,4 @@ pub mod opener;
 pub mod popup;
 pub mod storage;
 pub mod theme;
+pub mod x11_clipboard;

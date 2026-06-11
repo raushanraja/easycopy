@@ -11,6 +11,7 @@ use clipit_rs::ipc;
 use clipit_rs::popup;
 use clipit_rs::storage;
 use clipit_rs::theme;
+use clipit_rs::x11_clipboard::{SelectionEvent, X11Watcher};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -136,11 +137,17 @@ fn run_daemon() {
         eprintln!("[daemon] you can still use: clipit-rs --popup");
     }
 
+    // Try X11 event-driven clipboard monitoring (falls back to timer polling)
+    let mut x11_watcher = X11Watcher::try_new();
+    if x11_watcher.is_some() {
+        eprintln!("[daemon] X11 clipboard event source active");
+    } else {
+        eprintln!("[daemon] X11 not available — using polling fallback");
+    }
+
     eprintln!(
-        "[daemon] started — polling every {}ms, max {} text / {} images",
-        config.general.poll_interval_ms,
-        config.general.max_text_items,
-        config.general.max_image_items,
+        "[daemon] started — max {} text / {} images",
+        config.general.max_text_items, config.general.max_image_items,
     );
 
     let hotkey_rx = GlobalHotKeyEvent::receiver();
@@ -148,10 +155,10 @@ fn run_daemon() {
     let poll_interval = config.general.poll_interval_ms;
     let tick_ms = 50;
     let ticks_per_poll = (poll_interval / tick_ms).max(1);
-    let mut tick_count = 0;
+    let mut tick_count = 0u64;
 
     loop {
-        // Handle paste requests from popup via IPC (event-driven, no filesystem polling)
+        // ── IPC: paste requests from popup ────────────────────────
         if let Some(ref rx) = ipc_rx {
             while let Ok(item) = rx.try_recv() {
                 if let Ok(mut cb) = arboard::Clipboard::new() {
@@ -180,44 +187,42 @@ fn run_daemon() {
             }
         }
 
-        tick_count += 1;
-        if tick_count >= ticks_per_poll {
-            tick_count = 0;
-            if config.general.enable_clipping {
-                if let Some(raw) = monitor.poll() {
-                    let item = match raw {
-                        ClipItem::Image {
-                            data: Some(bytes),
-                            width,
-                            height,
-                            timestamp,
-                            ..
-                        } => match storage::save_image_owned(bytes, width, height) {
-                            Ok(filename) => ClipItem::Image {
-                                width,
-                                height,
-                                timestamp,
-                                filename,
-                                data: None,
-                            },
-                            Err(e) => {
-                                eprintln!("[daemon] failed to save image: {e}");
-                                std::thread::sleep(Duration::from_millis(tick_ms));
-                                continue;
-                            }
-                        },
-                        other => other,
-                    };
-
-                    if history.add(item) {
-                        if let Err(e) = storage::save_history(history.items()) {
-                            eprintln!("[daemon] failed to save history: {e}");
+        // ── Clipboard monitoring ──────────────────────────────────
+        if let Some(ref mut x11) = x11_watcher {
+            // Event-driven: check for XFixes selection events
+            let x11_events = x11.poll_events();
+            if theme::is_debug_logging() && !x11_events.is_empty() {
+                eprintln!("[daemon] X11 events: {:?}", x11_events);
+            }
+            for event in &x11_events {
+                if *event == SelectionEvent::Clipboard && config.general.enable_clipping {
+                    if theme::is_debug_logging() {
+                        eprintln!("[daemon] clipboard event → checking monitor");
+                    }
+                    if let Some(raw) = monitor.poll() {
+                        if theme::is_debug_logging() {
+                            eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
+                        process_clip_item(raw, &mut history);
+                    } else if theme::is_debug_logging() {
+                        eprintln!("[daemon] monitor.poll() returned None (no change)");
+                    }
+                }
+            }
+        } else {
+            // Fallback: timer-based polling
+            tick_count += 1;
+            if tick_count >= ticks_per_poll {
+                tick_count = 0;
+                if config.general.enable_clipping {
+                    if let Some(raw) = monitor.poll() {
+                        process_clip_item(raw, &mut history);
                     }
                 }
             }
         }
 
+        // ── Hotkey: open popup ────────────────────────────────────
         if hotkey_registered {
             if let Ok(event) = hotkey_rx.try_recv() {
                 if event.state == HotKeyState::Pressed {
@@ -228,6 +233,53 @@ fn run_daemon() {
             }
         }
 
-        std::thread::sleep(Duration::from_millis(tick_ms));
+        // ── Wait ──────────────────────────────────────────────────
+        if let Some(ref mut x11) = x11_watcher {
+            // Block on the X11 fd (wake immediately on clipboard events)
+            let x11_fd = x11.fd();
+            let mut pollfd = libc::pollfd {
+                fd: x11_fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let ret = unsafe { libc::poll(&mut pollfd, 1, 50) };
+            if theme::is_debug_logging() && ret > 0 {
+                eprintln!("[daemon] poll() woke (revents={})", pollfd.revents,);
+            }
+        } else {
+            std::thread::sleep(Duration::from_millis(tick_ms));
+        }
+    }
+}
+
+/// Process a clip item detected by the monitor — saves images, adds to history.
+fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) {
+    let item = match raw {
+        ClipItem::Image {
+            data: Some(bytes),
+            width,
+            height,
+            timestamp,
+            ..
+        } => match storage::save_image_owned(bytes, width, height) {
+            Ok(filename) => ClipItem::Image {
+                width,
+                height,
+                timestamp,
+                filename,
+                data: None,
+            },
+            Err(e) => {
+                eprintln!("[daemon] failed to save image: {e}");
+                return;
+            }
+        },
+        other => other,
+    };
+
+    if history.add(item) {
+        if let Err(e) = storage::save_history(history.items()) {
+            eprintln!("[daemon] failed to save history: {e}");
+        }
     }
 }
