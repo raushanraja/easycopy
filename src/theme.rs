@@ -1,7 +1,25 @@
 use crate::config::Config;
 use egui;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+
+/// Global debug-logging flag – set once from config at startup.
+static DEBUG_LOGGING: AtomicBool = AtomicBool::new(false);
+
+/// Enable or disable verbose diagnostic logging (font resolution, etc.).
+pub fn set_debug_logging(enabled: bool) {
+    DEBUG_LOGGING.store(enabled, Ordering::Relaxed);
+}
+
+/// Emit a diagnostic message only when debug logging is enabled.
+macro_rules! debug_log {
+    ($($arg:tt)*) => {{
+        if crate::theme::DEBUG_LOGGING.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!($($arg)*);
+        }
+    }};
+}
 
 // ── Theme Colors ─────────────────────────────────────────────────
 
@@ -518,18 +536,20 @@ pub fn is_font_preset_available(preset: &str) -> bool {
     map.get(preset).copied().unwrap_or(true)
 }
 
-/// Log font diagnostic info to stderr.
+/// Log font diagnostic info (only when debug logging is enabled).
 fn log_font_diag(preset: &str, prop: &Option<String>, mono: &Option<String>) {
     match (prop, mono) {
         (Some(p), Some(m)) => {
-            eprintln!(
+            debug_log!(
                 "[fonts] {} → proportional: {} | monospace: {}",
-                preset, p, m
+                preset,
+                p,
+                m
             )
         }
-        (Some(p), None) => eprintln!("[fonts] {} → proportional: {} (no monospace)", preset, p),
-        (None, Some(m)) => eprintln!("[fonts] {} → monospace: {} (no proportional)", preset, m),
-        (None, None) => eprintln!("[fonts] {} → no font files found on this system", preset),
+        (Some(p), None) => debug_log!("[fonts] {} → proportional: {} (no monospace)", preset, p),
+        (None, Some(m)) => debug_log!("[fonts] {} → monospace: {} (no proportional)", preset, m),
+        (None, None) => debug_log!("[fonts] {} → no font files found on this system", preset),
     }
 }
 

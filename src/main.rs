@@ -10,6 +10,7 @@ use clipit_rs::hotkey::parse_hotkey;
 use clipit_rs::ipc;
 use clipit_rs::popup;
 use clipit_rs::storage;
+use clipit_rs::theme;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -77,6 +78,7 @@ DATA:
 
 fn run_daemon() {
     let config = Config::load();
+    theme::set_debug_logging(config.general.debug_logging);
 
     // Cache directory paths to avoid repeated PathBuf construction in the hot loop
     let data_dir = Config::data_dir();

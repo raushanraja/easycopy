@@ -31,6 +31,8 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     let auto_paste = config.general.auto_paste;
     let paste_delay_ms = config.general.paste_delay_ms;
 
+    theme::set_debug_logging(config.general.debug_logging);
+
     let selected_item = Arc::new(std::sync::Mutex::new(None));
     let selected_item_for_app = selected_item.clone();
 

@@ -46,6 +46,9 @@ fn default_enable_clipping() -> bool {
 fn default_close_on_focus_out() -> bool {
     true
 }
+fn default_debug_logging() -> bool {
+    false
+}
 fn default_font_preset() -> String {
     "default".to_string()
 }
@@ -97,6 +100,8 @@ pub struct GeneralConfig {
     pub enable_theming: bool,
     pub enable_clipping: bool,
     pub close_on_focus_out: bool,
+    /// Enable verbose debug logging (font resolution, etc.)
+    pub debug_logging: bool,
     /// Font preset: "default", "dejavu", "liberation", "fira", "jetbrains"
     pub font_preset: String,
     /// Font size: "small", "medium", "large"
@@ -127,6 +132,7 @@ impl Default for GeneralConfig {
             enable_theming: default_enable_theming(),
             enable_clipping: default_enable_clipping(),
             close_on_focus_out: default_close_on_focus_out(),
+            debug_logging: default_debug_logging(),
             font_preset: default_font_preset(),
             font_size: default_font_size(),
             font_proportional_path: default_font_proportional_path(),
@@ -330,6 +336,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);
+        assert_eq!(cfg.general.debug_logging, false);
         assert_eq!(cfg.general.font_preset, "default");
         assert_eq!(cfg.general.font_size, "medium");
         assert_eq!(cfg.general.font_proportional_path, "");
