@@ -3,5 +3,6 @@ pub mod config;
 pub mod history;
 pub mod hotkey;
 pub mod ipc;
+pub mod opener;
 pub mod popup;
 pub mod storage;

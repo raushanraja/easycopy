@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const SEARCH_HINT: &str = "Search clips, image size, or filename…";
-const FOOTER_HELP: &str = "Esc close · ↑↓ navigate · Enter paste · Del remove · Ctrl+K clear search";
+const FOOTER_HELP: &str = "Esc close · ↑↓ navigate · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
 
 /// Entry point for the popup window. Blocks until the window is closed.
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
@@ -1238,10 +1238,7 @@ impl PopupApp {
                         );
                         
                         if open_resp.clicked() {
-                            let path = Config::images_dir().join(&filename);
-                            let _ = std::process::Command::new("xdg-open")
-                                .arg(path)
-                                .spawn();
+                            let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
                         }
                     });
                 });
@@ -1282,6 +1279,7 @@ impl eframe::App for PopupApp {
         let enter = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
         let del = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete));
         let ctrl_k = ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::K));
+        let ctrl_o = ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::O));
 
         let mut select_digit = None;
         ctx.input_mut(|i| {
@@ -1328,6 +1326,22 @@ impl eframe::App for PopupApp {
         if ctrl_k {
             self.query.clear();
             self.apply_filter();
+        }
+        if ctrl_o {
+            let target = if let Some((ref filename, _)) = self.preview_image {
+                Some(crate::opener::OpenTarget::Image(filename.clone()))
+            } else if let Some(&idx) = self.filtered.get(self.selected) {
+                match self.all.get(idx) {
+                    Some(ClipItem::Text { content, .. }) => Some(crate::opener::OpenTarget::Text(content.clone())),
+                    Some(ClipItem::Image { filename, .. }) => Some(crate::opener::OpenTarget::Image(filename.clone())),
+                    None => None,
+                }
+            } else {
+                None
+            };
+            if let Some(t) = target {
+                let _ = crate::opener::open_item(&t);
+            }
         }
         if let Some(digit) = select_digit {
             if digit < self.filtered.len() {
