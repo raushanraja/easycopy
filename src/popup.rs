@@ -270,9 +270,43 @@ fn paint_trash_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
     );
 }
 
+fn paint_open_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let s = rect.width() / 12.0;
+    let stroke = egui::Stroke::new(1.2 * s, color);
+    
+    let x = rect.left();
+    let y = rect.top();
+
+    // 1. Draw the box/bracket shape with rounded-diagonal corners
+    // Top segment of the box
+    painter.line_segment([egui::pos2(x + 5.1 * s, y + 2.4 * s), egui::pos2(x + 3.2 * s, y + 2.4 * s)], stroke);
+    // Top-left corner
+    painter.line_segment([egui::pos2(x + 3.2 * s, y + 2.4 * s), egui::pos2(x + 2.4 * s, y + 3.2 * s)], stroke);
+    // Left edge
+    painter.line_segment([egui::pos2(x + 2.4 * s, y + 3.2 * s), egui::pos2(x + 2.4 * s, y + 8.8 * s)], stroke);
+    // Bottom-left corner
+    painter.line_segment([egui::pos2(x + 2.4 * s, y + 8.8 * s), egui::pos2(x + 3.2 * s, y + 9.6 * s)], stroke);
+    // Bottom edge
+    painter.line_segment([egui::pos2(x + 3.2 * s, y + 9.6 * s), egui::pos2(x + 8.8 * s, y + 9.6 * s)], stroke);
+    // Bottom-right corner
+    painter.line_segment([egui::pos2(x + 8.8 * s, y + 9.6 * s), egui::pos2(x + 9.6 * s, y + 8.8 * s)], stroke);
+    // Right edge
+    painter.line_segment([egui::pos2(x + 9.6 * s, y + 8.8 * s), egui::pos2(x + 9.6 * s, y + 6.9 * s)], stroke);
+
+    // 2. Draw the diagonal arrow line
+    painter.line_segment([egui::pos2(x + 5.8 * s, y + 5.8 * s), egui::pos2(x + 9.6 * s, y + 2.4 * s)], stroke);
+
+    // 3. Draw the arrowhead L-shape (top-right)
+    // Horizontal segment of arrowhead
+    painter.line_segment([egui::pos2(x + 7.2 * s, y + 2.4 * s), egui::pos2(x + 9.6 * s, y + 2.4 * s)], stroke);
+    // Vertical segment of arrowhead
+    painter.line_segment([egui::pos2(x + 9.6 * s, y + 2.4 * s), egui::pos2(x + 9.6 * s, y + 4.8 * s)], stroke);
+}
+
 fn draw_icon_badge(ui: &mut egui::Ui, icon_type: &str, is_selected: bool, enable_theming: bool) {
     let size = egui::vec2(36.0, 36.0);
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense { click: false, drag: false, focusable: false });
 
     let bg_color = if is_selected {
         if ui.visuals().dark_mode {
@@ -615,7 +649,7 @@ impl PopupApp {
                             ui.set_width(search_width);
                             ui.horizontal(|ui| {
                                 // Search icon
-                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense { click: false, drag: false, focusable: false });
                                 paint_search_icon(ui, icon_rect, ui.visuals().weak_text_color());
 
                                 ui.add_space(6.0);
@@ -744,31 +778,28 @@ impl PopupApp {
 
                         ui.painter().rect(button_rect, egui::Rounding::same(8.0), fill, stroke);
 
-                        ui.allocate_ui_at_rect(button_rect, |ui| {
-                            ui.horizontal_centered(|ui| {
-                                ui.add_space(8.0);
-                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
-                                let icon_color = if !enabled {
-                                    ui.visuals().weak_text_color()
-                                } else {
-                                    ui.visuals().text_color()
-                                };
-                                paint_trash_icon(ui, icon_rect, icon_color);
+                        let text_color = if !enabled {
+                            ui.visuals().weak_text_color()
+                        } else {
+                            ui.visuals().text_color()
+                        };
 
-                                ui.add_space(4.0);
+                        // Draw Icon via painter
+                        let icon_rect = egui::Rect::from_center_size(
+                            egui::pos2(button_rect.left() + 18.0, button_rect.center().y),
+                            egui::vec2(14.0, 14.0)
+                        );
+                        paint_trash_icon(ui, icon_rect, text_color);
 
-                                let text_color = if !enabled {
-                                    ui.visuals().weak_text_color()
-                                } else {
-                                    ui.visuals().text_color()
-                                };
-                                ui.label(
-                                    egui::RichText::new("Clear History")
-                                        .size(13.0)
-                                        .color(text_color)
-                                );
-                            });
-                        });
+                        // Draw Text via painter
+                        let text_pos = egui::pos2(button_rect.left() + 32.0, button_rect.center().y);
+                        ui.painter().text(
+                            text_pos,
+                            egui::Align2::LEFT_CENTER,
+                            "Clear History",
+                            egui::FontId::proportional(13.0),
+                            text_color
+                        );
 
                         if enabled && response.clicked() {
                             self.clear_history();
@@ -1000,177 +1031,224 @@ impl PopupApp {
     }
 
     fn draw_lightbox(&mut self, ui: &mut egui::Ui) {
-        let texture = if let Some((_, ref tex)) = self.preview_image {
-            Some(tex.clone())
-        } else {
-            None
+        let Some((ref filename, ref texture)) = self.preview_image else {
+            return;
         };
+        let texture = texture.clone();
+        let filename = filename.clone();
 
-        if let Some(texture) = texture {
-            let mut close_preview = false;
-            let ctx = ui.ctx();
+        let mut close_preview = false;
+        let ctx = ui.ctx();
 
-            egui::Area::new(egui::Id::new("lightbox_overlay"))
-                .order(egui::Order::Foreground)
-                .fixed_pos(egui::pos2(0.0, 0.0))
-                .show(ctx, |ui| {
-                    let screen_rect = ctx.screen_rect();
-                    let backdrop_response = ui.allocate_rect(screen_rect, egui::Sense::click());
-                    
-                    // Dim background
-                    let bg_color = egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220);
-                    ui.painter().rect_filled(
-                        screen_rect,
-                        egui::Rounding::same(if self.config.general.enable_theming { 16.0 } else { 0.0 }),
-                        bg_color
-                    );
+        egui::Area::new(egui::Id::new("lightbox_overlay"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(egui::pos2(0.0, 0.0))
+            .show(ctx, |ui| {
+                let screen_rect = ctx.screen_rect();
+                let backdrop_response = ui.allocate_rect(screen_rect, egui::Sense::click());
+                
+                // Dim background
+                let bg_color = egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220);
+                ui.painter().rect_filled(
+                    screen_rect,
+                    egui::Rounding::same(if self.config.general.enable_theming { 16.0 } else { 0.0 }),
+                    bg_color
+                );
 
-                    // Calculate original preview size (fits screen with padding, max 500x500)
-                    let max_img_size = egui::vec2(
-                        screen_rect.width() - 80.0,
-                        screen_rect.height() - 100.0,
-                    ).min(egui::vec2(500.0, 500.0));
-                    
-                    let img_size = texture.size_vec2();
-                    let scale = (max_img_size.x / img_size.x)
-                        .min(max_img_size.y / img_size.y)
-                        .min(1.0);
-                    let scaled_size = img_size * scale;
-                    
-                    // Apply zoom and pan to get final image rect
-                    let current_size = scaled_size * self.lightbox_zoom;
-                    let current_center = screen_rect.center() + self.lightbox_pan;
-                    let image_rect = egui::Rect::from_center_size(current_center, current_size);
-                    
-                    // Draw image
-                    let img = egui::Image::new(&texture)
-                        .fit_to_exact_size(current_size)
-                        .rounding(egui::Rounding::same(8.0));
-                    ui.put(image_rect, img);
+                // Calculate original preview size (fits screen with padding)
+                let max_img_size = egui::vec2(
+                    screen_rect.width() - 80.0,
+                    screen_rect.height() - 100.0,
+                );
+                
+                let img_size = texture.size_vec2();
+                let scale = (max_img_size.x / img_size.x)
+                    .min(max_img_size.y / img_size.y)
+                    .min(1.0);
+                let scaled_size = img_size * scale;
+                
+                // Apply zoom and pan to get final image rect
+                let current_size = scaled_size * self.lightbox_zoom;
+                let current_center = screen_rect.center() + self.lightbox_pan;
+                let image_rect = egui::Rect::from_center_size(current_center, current_size);
+                
+                // Draw image
+                let img = egui::Image::new(&texture)
+                    .fit_to_exact_size(current_size)
+                    .rounding(egui::Rounding::same(8.0));
+                ui.put(image_rect, img);
 
-                    // Interact with image for panning/double-clicking
-                    let image_response = ui.interact(image_rect, egui::Id::new("lightbox_image_interact"), egui::Sense::click_and_drag());
-                    
-                    if image_response.dragged() {
-                        self.lightbox_pan += image_response.drag_delta();
-                    }
-                    
-                    if image_response.double_clicked() {
-                        self.lightbox_zoom = 1.0;
-                        self.lightbox_pan = egui::Vec2::ZERO;
-                    }
+                // Interact with image for panning/double-clicking
+                let image_response = ui.interact(image_rect, egui::Id::new("lightbox_image_interact"), egui::Sense::click_and_drag());
+                
+                if image_response.dragged() {
+                    self.lightbox_pan += image_response.drag_delta();
+                }
+                
+                if image_response.double_clicked() {
+                    self.lightbox_zoom = 1.0;
+                    self.lightbox_pan = egui::Vec2::ZERO;
+                }
 
-                    // Backdrop click closes the preview only if click is outside the image rect
-                    if backdrop_response.clicked() {
-                        if let Some(hover_pos) = ctx.input(|i| i.pointer.hover_pos()) {
-                            if !image_rect.contains(hover_pos) {
-                                close_preview = true;
-                            }
+                // Backdrop click closes the preview only if click is outside the image rect
+                if backdrop_response.clicked() {
+                    if let Some(hover_pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                        if !image_rect.contains(hover_pos) {
+                            close_preview = true;
                         }
                     }
+                }
 
-                    // Close button at top-right of the screen
-                    let btn_size = egui::vec2(28.0, 28.0);
-                    let close_btn_pos = egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
-                    let close_rect = egui::Rect::from_center_size(close_btn_pos, btn_size);
-                    
-                    let close_response = ui.interact(close_rect, egui::Id::new("lightbox_close_btn"), egui::Sense::click());
-                    let btn_bg = if close_response.clicked() {
-                        ui.visuals().widgets.active.bg_fill
-                    } else if close_response.hovered() {
-                        ui.visuals().widgets.hovered.bg_fill
-                    } else {
-                        egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30)
-                    };
-                    
-                    ui.painter().circle_filled(close_rect.center(), 14.0, btn_bg);
-                    let close_icon_rect = egui::Rect::from_center_size(close_rect.center(), egui::vec2(10.0, 10.0));
-                    paint_close_icon(ui, close_icon_rect, egui::Color32::WHITE);
+                // Close button at top-right of the screen
+                let btn_size = egui::vec2(28.0, 28.0);
+                let close_btn_pos = egui::pos2(screen_rect.right() - 36.0, screen_rect.top() + 36.0);
+                let close_rect = egui::Rect::from_center_size(close_btn_pos, btn_size);
+                
+                let close_response = ui.interact(close_rect, egui::Id::new("lightbox_close_btn"), egui::Sense::click());
+                let btn_bg = if close_response.clicked() {
+                    ui.visuals().widgets.active.bg_fill
+                } else if close_response.hovered() {
+                    ui.visuals().widgets.hovered.bg_fill
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30)
+                };
+                
+                ui.painter().circle_filled(close_rect.center(), 14.0, btn_bg);
+                let close_icon_rect = egui::Rect::from_center_size(close_rect.center(), egui::vec2(10.0, 10.0));
+                paint_close_icon(ui, close_icon_rect, egui::Color32::WHITE);
 
-                    if close_response.clicked() {
-                        close_preview = true;
-                    }
+                if close_response.clicked() {
+                    close_preview = true;
+                }
 
-                    // Control bar panel at the bottom center of the screen
-                    let control_bar_rect = egui::Rect::from_center_size(
-                        egui::pos2(screen_rect.center().x, screen_rect.bottom() - 50.0),
-                        egui::vec2(160.0, 36.0)
-                    );
-                    
-                    let control_bg = if self.config.general.enable_theming {
-                        egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200) // slate-800
-                    } else {
-                        ui.visuals().widgets.inactive.bg_fill
-                    };
-                    
-                    ui.painter().rect(
-                        control_bar_rect,
-                        egui::Rounding::same(18.0),
-                        control_bg,
-                        egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
-                    );
-                    
-                    ui.allocate_ui_at_rect(control_bar_rect, |ui| {
-                        ui.horizontal_centered(|ui| {
-                            ui.add_space(20.0);
-                            
-                            // Zoom Out (-)
-                            let (minus_rect, minus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
-                            let minus_color = if minus_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
-                            let minus_stroke = egui::Stroke::new(2.0, minus_color);
-                            ui.painter().line_segment(
-                                [egui::pos2(minus_rect.left() + 6.0, minus_rect.center().y), egui::pos2(minus_rect.right() - 6.0, minus_rect.center().y)],
-                                minus_stroke
-                            );
-                            if minus_resp.clicked() {
-                                self.lightbox_zoom = (self.lightbox_zoom / 1.2).clamp(0.2, 10.0);
-                                ctx.request_repaint();
-                            }
-                            
-                            ui.add_space(6.0);
-                            
-                            // Zoom percentage / Reset
-                            let percent_text = format!("{}%", (self.lightbox_zoom * 100.0).round() as i32);
-                            let (lbl_rect, lbl_resp) = ui.allocate_exact_size(egui::vec2(60.0, 24.0), egui::Sense::click());
-                            let text_color = if lbl_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
-                            ui.painter().text(
-                                lbl_rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                percent_text,
-                                egui::FontId::proportional(14.0),
-                                text_color
-                            );
-                            if lbl_resp.clicked() {
-                                self.lightbox_zoom = 1.0;
-                                self.lightbox_pan = egui::Vec2::ZERO;
-                                ctx.request_repaint();
-                            }
-                            
-                            ui.add_space(6.0);
-                            
-                            // Zoom In (+)
-                            let (plus_rect, plus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
-                            let plus_color = if plus_resp.hovered() { ui.visuals().text_color() } else { ui.visuals().weak_text_color() };
-                            let plus_stroke = egui::Stroke::new(2.0, plus_color);
-                            ui.painter().line_segment(
-                                [egui::pos2(plus_rect.left() + 6.0, plus_rect.center().y), egui::pos2(plus_rect.right() - 6.0, plus_rect.center().y)],
-                                plus_stroke
-                            );
-                            ui.painter().line_segment(
-                                [egui::pos2(plus_rect.center().x, plus_rect.top() + 6.0), egui::pos2(plus_rect.center().x, plus_rect.bottom() - 6.0)],
-                                plus_stroke
-                            );
-                            if plus_resp.clicked() {
-                                self.lightbox_zoom = (self.lightbox_zoom * 1.2).clamp(0.2, 10.0);
-                                ctx.request_repaint();
-                            }
-                        });
+                // Control bar panel at the bottom center of the screen
+                let control_bar_rect = egui::Rect::from_center_size(
+                    egui::pos2(screen_rect.center().x, screen_rect.bottom() - 50.0),
+                    egui::vec2(250.0, 36.0)
+                );
+                
+                let control_bg = if self.config.general.enable_theming {
+                    egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200) // slate-800
+                } else {
+                    ui.visuals().widgets.inactive.bg_fill
+                };
+                
+                ui.painter().rect(
+                    control_bar_rect,
+                    egui::Rounding::same(18.0),
+                    control_bg,
+                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+                );
+                
+                ui.allocate_ui_at_rect(control_bar_rect, |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(16.0);
+                        
+                        // Zoom Out (-)
+                        let (minus_rect, minus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                        let minus_color = if minus_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        let minus_stroke = egui::Stroke::new(2.0, minus_color);
+                        ui.painter().line_segment(
+                            [egui::pos2(minus_rect.left() + 6.0, minus_rect.center().y), egui::pos2(minus_rect.right() - 6.0, minus_rect.center().y)],
+                            minus_stroke
+                        );
+                        if minus_resp.clicked() {
+                            self.lightbox_zoom = (self.lightbox_zoom / 1.2).clamp(0.2, 10.0);
+                            ctx.request_repaint();
+                        }
+                        
+                        ui.add_space(6.0);
+                        
+                        // Zoom percentage / Reset
+                        let percent_text = format!("{}%", (self.lightbox_zoom * 100.0).round() as i32);
+                        let (lbl_rect, lbl_resp) = ui.allocate_exact_size(egui::vec2(50.0, 24.0), egui::Sense::click());
+                        let text_color = if lbl_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        ui.painter().text(
+                            lbl_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            percent_text,
+                            egui::FontId::proportional(13.0),
+                            text_color
+                        );
+                        if lbl_resp.clicked() {
+                            self.lightbox_zoom = 1.0;
+                            self.lightbox_pan = egui::Vec2::ZERO;
+                            ctx.request_repaint();
+                        }
+                        
+                        ui.add_space(6.0);
+                        
+                        // Zoom In (+)
+                        let (plus_rect, plus_resp) = ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::click());
+                        let plus_color = if plus_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+                        let plus_stroke = egui::Stroke::new(2.0, plus_color);
+                        ui.painter().line_segment(
+                            [egui::pos2(plus_rect.left() + 6.0, plus_rect.center().y), egui::pos2(plus_rect.right() - 6.0, plus_rect.center().y)],
+                            plus_stroke
+                        );
+                        ui.painter().line_segment(
+                            [egui::pos2(plus_rect.center().x, plus_rect.top() + 6.0), egui::pos2(plus_rect.center().x, plus_rect.bottom() - 6.0)],
+                            plus_stroke
+                        );
+                        if plus_resp.clicked() {
+                            self.lightbox_zoom = (self.lightbox_zoom * 1.2).clamp(0.2, 10.0);
+                            ctx.request_repaint();
+                        }
+
+                        ui.add_space(16.0);
+
+                        // Separator
+                        let (sep_rect, _) = ui.allocate_exact_size(egui::vec2(1.0, 16.0), egui::Sense { click: false, drag: false, focusable: false });
+                        ui.painter().vline(sep_rect.center().x, sep_rect.y_range(), egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(255, 255, 255, 50)));
+                        
+                        ui.add_space(16.0);
+
+                        // Open / Open With Button
+                        let open_btn_rect = ui.allocate_exact_size(egui::vec2(75.0, 24.0), egui::Sense::click()).0;
+                        let open_resp = ui.interact(open_btn_rect, ui.id().with("open_btn"), egui::Sense::click());
+                        
+                        let open_bg = if open_resp.clicked() {
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 60)
+                        } else if open_resp.hovered() {
+                            egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30)
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+                        
+                        ui.painter().rect_filled(open_btn_rect, egui::Rounding::same(6.0), open_bg);
+                        
+                        let icon_color = if open_resp.hovered() { egui::Color32::WHITE } else { egui::Color32::from_rgb(200, 200, 200) };
+
+                        // Draw Icon via painter
+                        let icon_rect = egui::Rect::from_min_size(
+                            egui::pos2(open_btn_rect.left() + 12.5, open_btn_rect.center().y - 7.0),
+                            egui::vec2(14.0, 14.0)
+                        );
+                        paint_open_icon(ui, icon_rect, icon_color);
+
+                        // Draw Text via painter
+                        let text_pos = egui::pos2(open_btn_rect.left() + 32.5, open_btn_rect.center().y);
+                        ui.painter().text(
+                            text_pos,
+                            egui::Align2::LEFT_CENTER,
+                            "Open",
+                            egui::FontId::proportional(13.0),
+                            icon_color
+                        );
+                        
+                        if open_resp.clicked() {
+                            let path = Config::images_dir().join(&filename);
+                            let _ = std::process::Command::new("xdg-open")
+                                .arg(path)
+                                .spawn();
+                        }
                     });
                 });
+            });
 
-            if close_preview {
-                self.preview_image = None;
-            }
+        if close_preview {
+            self.preview_image = None;
         }
     }
 }
