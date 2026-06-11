@@ -104,6 +104,49 @@ fn run_daemon() {
         }
     };
 
+    // ── Pre-cache desktop apps and image thumbnails ──────────────
+    // This runs in a background thread so the daemon loop starts
+    // immediately.  The cache files are ready by the time the user
+    // opens the popup for the first time.
+    {
+        let history_items = storage::load_history();
+        std::thread::Builder::new()
+            .name("precache".into())
+            .spawn(move || {
+                // Cache desktop apps (slow I/O scan)
+                let apps = clipit_rs::desktop::load_desktop_apps();
+                if let Err(e) = clipit_rs::desktop::save_apps_cache(&apps) {
+                    eprintln!("[daemon] warning: failed to write apps cache: {e}");
+                } else {
+                    eprintln!("[daemon] cached {} desktop apps", apps.len());
+                }
+
+                // Pre-compute missing thumbnails for all image clips
+                let images_dir = Config::images_dir();
+                for item in &history_items {
+                    if let ClipItem::Image { filename, .. } = item {
+                        if filename.is_empty() {
+                            continue;
+                        }
+                        let thumb_path = images_dir.join(format!("thumb_{}", filename));
+                        if thumb_path.exists() {
+                            continue;
+                        }
+                        let src_path = images_dir.join(filename);
+                        if !src_path.exists() {
+                            continue;
+                        }
+                        if let Ok(img) = image::open(&src_path) {
+                            let thumb =
+                                img.resize(52, 52, image::imageops::FilterType::Triangle);
+                            let _ = thumb.save(&thumb_path);
+                        }
+                    }
+                }
+            })
+            .ok();
+    }
+
     let mut history = HistoryManager::new(
         config.general.max_text_items,
         config.general.max_image_items,

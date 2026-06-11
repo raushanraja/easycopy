@@ -1,3 +1,5 @@
+use crate::config::Config;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,7 +8,7 @@ use std::path::{Path, PathBuf};
 //  DESKTOP APP
 // ================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesktopApp {
     pub name: String,
     pub comment: String,
@@ -18,8 +20,47 @@ pub struct DesktopApp {
 //  PUBLIC API
 // ================================================================
 
+/// Scan .desktop files (slow – full I/O scan).
 pub fn load_desktop_apps() -> Vec<DesktopApp> {
     scan_desktop_files()
+}
+
+/// Path to the cached desktop apps JSON file.
+fn apps_cache_path() -> PathBuf {
+    Config::data_dir().join("apps_cache.json")
+}
+
+/// Save a list of apps to the cache file (written by the daemon).
+pub fn save_apps_cache(apps: &[DesktopApp]) -> std::io::Result<()> {
+    let path = apps_cache_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let file = std::fs::File::create(&tmp)?;
+    let writer = std::io::BufWriter::new(file);
+    serde_json::to_writer(writer, apps)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Load apps from the cache file (fast – single JSON read).
+/// Returns `None` when no cache exists yet.
+pub fn load_apps_cache() -> Option<Vec<DesktopApp>> {
+    let path = apps_cache_path();
+    if !path.exists() {
+        return None;
+    }
+    let json = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// Full scan + cache update.  Call from a background thread.
+pub fn refresh_and_cache_apps() -> Vec<DesktopApp> {
+    let apps = scan_desktop_files();
+    let _ = save_apps_cache(&apps);
+    apps
 }
 
 // ================================================================

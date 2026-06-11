@@ -8,6 +8,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 // ================================================================
+//  LoadedData — sent from background thread when history+caches done
+// ================================================================
+
+struct LoadedData {
+    clips: Vec<ClipItem>,
+    cached_clip_char_counts: Vec<usize>,
+    cached_clip_previews: Vec<String>,
+    cached_clip_search: Vec<String>,
+    cached_clip_file_sizes: HashMap<String, u64>,
+}
+
+// ================================================================
 //  DisplayItem — unified list entry for clips and apps
 // ================================================================
 
@@ -143,6 +155,8 @@ struct PopupApp {
     lightbox_pan: egui::Vec2,
     focused_once: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
+    clip_rx: std::sync::mpsc::Receiver<LoadedData>,
+    clips_loaded: bool,
     app_rx: std::sync::mpsc::Receiver<Vec<DesktopApp>>,
     apps_loaded: bool,
     cached_clip_char_counts: Vec<usize>,
@@ -159,18 +173,74 @@ impl PopupApp {
         should_paste: Arc<AtomicBool>,
         selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     ) -> Self {
-        let clips: Vec<ClipItem> = storage::load_history().into_iter().collect();
+        // ── All heavy I/O happens in background threads ──
 
-        // Initial filtered list: clips only (apps load async via channel)
-        let filtered: Vec<DisplayItem> = (0..clips.len())
-            .map(|clip_idx| DisplayItem::Clip { clip_idx })
-            .collect();
-
-        // ── Async image thumbnail loading (same as before) ──
-        let (tx, rx) = std::sync::mpsc::channel();
-        let clips_cloned = clips.clone();
+        // History load + cache computation thread
+        let (clip_tx, clip_rx) = std::sync::mpsc::channel();
+        let preview_chars = config.general.preview_chars;
         std::thread::spawn(move || {
-            for item in clips_cloned {
+            let clips: Vec<ClipItem> = storage::load_history().into_iter().collect();
+
+            // Compute caches in the background alongside loading
+            let cached_clip_char_counts: Vec<usize> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => content.chars().count(),
+                    _ => 0,
+                })
+                .collect();
+
+            let cached_clip_previews: Vec<String> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => preview_text(content, preview_chars),
+                    _ => String::new(),
+                })
+                .collect();
+
+            let cached_clip_search: Vec<String> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => content.to_lowercase(),
+                    ClipItem::Image {
+                        width,
+                        height,
+                        filename,
+                        ..
+                    } => format!(
+                        "{}\u{00d7}{} {}x{} {}",
+                        width, height, width, height, filename
+                    )
+                    .to_lowercase(),
+                })
+                .collect();
+
+            let mut cached_clip_file_sizes = HashMap::new();
+            for item in &clips {
+                if let ClipItem::Image { filename, .. } = item {
+                    if !filename.is_empty() {
+                        if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename))
+                        {
+                            cached_clip_file_sizes.insert(filename.clone(), meta.len());
+                        }
+                    }
+                }
+            }
+
+            let _ = clip_tx.send(LoadedData {
+                clips,
+                cached_clip_char_counts,
+                cached_clip_previews,
+                cached_clip_search,
+                cached_clip_file_sizes,
+            });
+        });
+
+        // ── Async image thumbnail loading ──
+        let (tx, rx) = std::sync::mpsc::channel();
+        let clips_for_images: Vec<ClipItem> = storage::load_history().into_iter().collect();
+        std::thread::spawn(move || {
+            for item in clips_for_images {
                 if let ClipItem::Image { filename, .. } = item {
                     if filename.is_empty() {
                         continue;
@@ -202,66 +272,27 @@ impl PopupApp {
             }
         });
 
-        // ── Async desktop app loading ──
+        // ── Async desktop app loading (from cache first, refresh in bg) ──
         let (app_tx, app_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let apps = crate::desktop::load_desktop_apps();
-            let _ = app_tx.send(apps);
-        });
-
-        // Pre-compute caches to avoid per-frame allocations in the render loop
-        let cached_clip_char_counts: Vec<usize> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.chars().count(),
-                _ => 0,
-            })
-            .collect();
-
-        let cached_clip_previews: Vec<String> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => {
-                    preview_text(content, config.general.preview_chars)
-                }
-                _ => String::new(),
-            })
-            .collect();
-
-        let cached_clip_search: Vec<String> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.to_lowercase(),
-                ClipItem::Image {
-                    width,
-                    height,
-                    filename,
-                    ..
-                } => format!(
-                    "{}\u{00d7}{} {}x{} {}",
-                    width, height, width, height, filename
-                )
-                .to_lowercase(),
-            })
-            .collect();
-
-        let mut cached_clip_file_sizes = HashMap::new();
-        for item in &clips {
-            if let ClipItem::Image { filename, .. } = item {
-                if !filename.is_empty() {
-                    if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
-                        cached_clip_file_sizes.insert(filename.clone(), meta.len());
-                    }
-                }
+            // Try cache first – should be nearly instant
+            if let Some(cached) = crate::desktop::load_apps_cache() {
+                let _ = app_tx.send(cached);
+                // Then refresh the cache in background for next time
+                crate::desktop::refresh_and_cache_apps();
+            } else {
+                // No cache yet – do the full scan (daemon may still be starting)
+                let apps = crate::desktop::refresh_and_cache_apps();
+                let _ = app_tx.send(apps);
             }
-        }
+        });
 
         let theme_colors = ThemeColors::from_config(&config);
 
         Self {
-            clips,
+            clips: Vec::new(),
             apps: Vec::new(),
-            filtered,
+            filtered: Vec::new(),
             query: String::new(),
             selected: 0,
             textures: HashMap::new(),
@@ -278,12 +309,14 @@ impl PopupApp {
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
             rx,
+            clip_rx,
+            clips_loaded: false,
             app_rx,
             apps_loaded: false,
-            cached_clip_char_counts,
-            cached_clip_previews,
-            cached_clip_search,
-            cached_clip_file_sizes,
+            cached_clip_char_counts: Vec::new(),
+            cached_clip_previews: Vec::new(),
+            cached_clip_search: Vec::new(),
+            cached_clip_file_sizes: HashMap::new(),
             cached_app_search: Vec::new(),
         }
     }
@@ -644,6 +677,18 @@ impl PopupApp {
             .inner_margin(egui::Margin::symmetric(20.0, 6.0))
             .show(ui, |ui| {
                 let weak_color = self.weak_color(ui);
+
+                if !self.clips_loaded {
+                    draw_empty_state(
+                        ui,
+                        "Loading…",
+                        "Reading clipboard history.",
+                        weak_color,
+                    );
+                    ui.ctx().request_repaint(); // keep animating until loaded
+                    return;
+                }
+
                 if self.clips.is_empty() && self.apps.is_empty() {
                     draw_empty_state(
                         ui,
@@ -1841,6 +1886,24 @@ impl eframe::App for PopupApp {
         }
         if loaded_any {
             ctx.request_repaint();
+        }
+
+        // ── Async clip loading: receive history+caches once loaded ──
+        if !self.clips_loaded {
+            if let Ok(data) = self.clip_rx.try_recv() {
+                self.clips = data.clips;
+                self.cached_clip_char_counts = data.cached_clip_char_counts;
+                self.cached_clip_previews = data.cached_clip_previews;
+                self.cached_clip_search = data.cached_clip_search;
+                self.cached_clip_file_sizes = data.cached_clip_file_sizes;
+                self.clips_loaded = true;
+                // Build initial filtered list now that we have clips
+                self.filtered = (0..self.clips.len())
+                    .map(|clip_idx| DisplayItem::Clip { clip_idx })
+                    .collect();
+                self.apply_filter();
+                ctx.request_repaint();
+            }
         }
 
         // ── Async app loading: receive apps once they're done scanning ──
