@@ -196,6 +196,16 @@ fn simulate_paste() {
         .status();
 }
 
+fn spawn_app_after_popup_hide(exec: String) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(60));
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&exec)
+            .spawn();
+    });
+}
+
 struct PopupApp {
     clips: Vec<ClipItem>,
     apps: Vec<DesktopApp>,
@@ -696,29 +706,14 @@ impl PopupApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
-            // Launch app, keep popup open
             if let Some(app) = self.apps.get(*app_idx) {
                 let exec = app.exec.clone();
-                std::thread::spawn(move || {
-                    let _ = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&exec)
-                        .spawn();
-                });
-            }
-        }
-    }
-
-    fn launch_selected_app(&self) {
-        if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
-            if let Some(app) = self.apps.get(*app_idx) {
-                let exec = app.exec.clone();
-                std::thread::spawn(move || {
-                    let _ = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&exec)
-                        .spawn();
-                });
+                if self.daemon_mode {
+                    self.hide_daemon_popup(ctx);
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+                spawn_app_after_popup_hide(exec);
             }
         }
     }
@@ -2360,10 +2355,13 @@ impl eframe::App for PopupApp {
             } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
                 if let Some(app) = self.apps.get(*app_idx) {
                     let exec = app.exec.clone();
-                    let _ = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&exec)
-                        .spawn();
+                    if self.daemon_mode {
+                        self.hide_daemon_popup(ctx);
+                    } else {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    spawn_app_after_popup_hide(exec);
+                    return;
                 }
             }
         }
