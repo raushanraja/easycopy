@@ -154,6 +154,12 @@ pub fn run_popup_in_daemon(
                 .with_resizable(false)
                 .with_transparent(true)
                 .with_visible(false), // hidden at startup
+            #[cfg(target_os = "linux")]
+            event_loop_builder: Some(Box::new(|builder| {
+                // Allow running the event loop on a non-main thread.
+                use winit::platform::x11::EventLoopBuilderExtX11;
+                builder.with_any_thread(true);
+            })),
             ..Default::default()
         };
 

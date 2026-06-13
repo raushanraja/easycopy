@@ -10,6 +10,7 @@ readme = "README.md"
 arboard = "3"
 eframe = "0.28"
 egui = "0.28"
+winit = "0.29"
 global-hotkey = "0.5"
 image = { version = "0.25", default-features = false, features = ["png"] }
 serde = { version = "1", features = ["derive"] }

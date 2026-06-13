@@ -110,7 +110,7 @@ fn run_daemon() {
     use std::sync::mpsc;
     let (paste_tx, paste_rx) = mpsc::channel::<ClipItem>();
     let (history_update_tx, history_update_rx) = mpsc::channel::<Vec<ClipItem>>();
-    let (popup_handle, popup_tx, shutdown_tx) = popup::run_popup_in_daemon(
+    let (_popup_handle, popup_tx, _shutdown_tx) = popup::run_popup_in_daemon(
         config.clone(),
         paste_tx,
         history_update_rx,
@@ -338,11 +338,11 @@ fn run_daemon() {
     }
 
     // ── Graceful shutdown (reached when daemon receives SIGTERM/etc.) ──
-    #[allow(unreachable_code)]
+    #[allow(unreachable_code, unused)]
     {
         eprintln!("[daemon] shutting down popup...");
-        let _ = shutdown_tx.send(());
-        let _ = popup_handle.join();
+        let _ = _shutdown_tx.send(());
+        let _ = _popup_handle.join();
         eprintln!("[daemon] popup exited");
     }
 }
