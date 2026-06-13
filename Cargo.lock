@@ -703,26 +703,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clipit-rs"
-version = "0.2.0"
-dependencies = [
- "arboard",
- "chrono",
- "dirs",
- "eframe",
- "egui",
- "global-hotkey",
- "image",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "toml",
- "winit",
- "x11rb",
-]
-
-[[package]]
 name = "cocoa"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1009,6 +989,26 @@ name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
+name = "easycopy"
+version = "0.2.0"
+dependencies = [
+ "arboard",
+ "chrono",
+ "dirs",
+ "eframe",
+ "egui",
+ "global-hotkey",
+ "image",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+ "winit",
+ "x11rb",
+]
 
 [[package]]
 name = "ecolor"

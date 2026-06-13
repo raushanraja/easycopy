@@ -17,7 +17,7 @@ pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0);
-            let temp_path = temp_dir.join(format!("clipit_{}.txt", timestamp));
+            let temp_path = temp_dir.join(format!("easycopy_{}.txt", timestamp));
             {
                 let mut file = File::create(&temp_path)?;
                 file.write_all(content.as_bytes())?;

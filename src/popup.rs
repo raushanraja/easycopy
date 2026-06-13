@@ -787,7 +787,7 @@ impl PopupApp {
                 }
 
                 egui::ScrollArea::vertical()
-                    .id_source("clipit_clip_list")
+                    .id_source("easycopy_clip_list")
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.spacing_mut().item_spacing.y = 8.0;

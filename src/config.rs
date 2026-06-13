@@ -211,7 +211,7 @@ impl Config {
     }
 
     pub fn config_path() -> PathBuf {
-        Self::config_dir().join("easycopy.toml")
+        Self::config_dir().join("config.toml")
     }
 
     pub fn load() -> Self {

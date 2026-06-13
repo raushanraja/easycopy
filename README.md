@@ -1,38 +1,38 @@
-# clipit-rs
+# easycopy
 
 Linux clipboard history manager. Daemon monitors the clipboard, popup lets you browse, search, and paste.
 
 <p align="center">
-  <img src="assets/minimal.png" alt="clipit-rs popup showing clipboard history" width="360">
+  <img src="assets/minimal.png" alt="easycopy popup showing clipboard history" width="360">
 </p>
 
 ## Screenshots
 
 <p>
-  <img src="assets/app_search.png" alt="App search mode in clipit-rs" width="330">
-  <img src="assets/right_click_image_preview.png" alt="Image preview in clipit-rs" width="250">
+  <img src="assets/app_search.png" alt="App search mode in easycopy" width="330">
+  <img src="assets/right_click_image_preview.png" alt="Image preview in easycopy" width="250">
 </p>
 
 <p>
-  <img src="assets/theme_selection.png" alt="Theme selection menu in clipit-rs" width="330">
-  <img src="assets/footer.png" alt="Footer controls in clipit-rs" width="330">
+  <img src="assets/theme_selection.png" alt="Theme selection menu in easycopy" width="330">
+  <img src="assets/footer.png" alt="Footer controls in easycopy" width="330">
 </p>
 
 ## Usage
 
 ```bash
-clipit-rs          # start daemon
-clipit-rs --popup  # open popup
-clipit-rs --clear  # delete history and saved images
-clipit-rs -V       # version
-clipit-rs -h       # help
+easycopy          # start daemon
+easycopy --popup  # open popup
+easycopy --clear  # delete history and saved images
+easycopy -V       # version
+easycopy -h       # help
 ```
 
 Default hotkey: **Ctrl+Alt+V**.
 
 ## Configuration
 
-First run creates `~/.config/easycopy/easycopy.toml`.
+First run creates `~/.config/easycopy/config.toml`.
 
 <details>
 <summary>Default config</summary>
@@ -89,8 +89,8 @@ The popup also has an in-app settings dropdown where themes, fonts, and font siz
 Add to your i3 config:
 
 ```
-exec_always --no-startup-id /path/to/clipit-rs
-for_window [class="clipit-rs"] border none
+exec_always --no-startup-id /path/to/easycopy
+for_window [class="easycopy"] border none
 ```
 
 The popup already sets `decorations(false)` and `always_on_top`, so with the `border none` rule it appears as a clean floating window.
@@ -101,12 +101,12 @@ The popup already sets `decorations(false)` and `always_on_top`, so with the `bo
 
 ```ini
 [Unit]
-Description=clipit-rs clipboard history daemon
+Description=easycopy clipboard history daemon
 After=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/clipit-rs
+ExecStart=%h/.local/bin/easycopy
 Restart=on-failure
 RestartSec=2
 
@@ -114,10 +114,10 @@ RestartSec=2
 WantedBy=default.target
 ```
 
-Save as `~/.config/systemd/user/clipit-rs.service`, then:
+Save as `~/.config/systemd/user/easycopy.service`, then:
 
 ```bash
-systemctl --user enable --now clipit-rs
+systemctl --user enable --now easycopy
 ```
 </details>
 

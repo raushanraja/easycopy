@@ -3,15 +3,15 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 
-use clipit_rs::clipboard::ClipboardMonitor;
-use clipit_rs::config::Config;
-use clipit_rs::history::{ClipItem, HistoryManager};
-use clipit_rs::hotkey::parse_hotkey;
-use clipit_rs::ipc;
-use clipit_rs::popup;
-use clipit_rs::storage;
-use clipit_rs::theme;
-use clipit_rs::x11_clipboard::{SelectionEvent, X11Watcher};
+use easycopy::clipboard::ClipboardMonitor;
+use easycopy::config::Config;
+use easycopy::history::{ClipItem, HistoryManager};
+use easycopy::hotkey::parse_hotkey;
+use easycopy::ipc;
+use easycopy::popup;
+use easycopy::storage;
+use easycopy::theme;
+use easycopy::x11_clipboard::{SelectionEvent, X11Watcher};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -51,26 +51,26 @@ fn cmd_clear() {
 }
 
 fn cmd_version() {
-    println!("clipit-rs 0.2.0");
+    println!("easycopy 0.2.0");
 }
 
 fn cmd_help() {
     println!(
-        r#"clipit-rs — minimal clipboard history manager
+        r#"easycopy — minimal clipboard history manager
 
 USAGE:
-    clipit-rs              Start daemon (monitor clipboard + hotkey)
-    clipit-rs --popup      Show the history popup
-    clipit-rs --clear      Delete all history and saved images
-    clipit-rs --version    Print version
-    clipit-rs --help       Show this help
+    easycopy              Start daemon (monitor clipboard + hotkey)
+    easycopy --popup      Show the history popup
+    easycopy --clear      Delete all history and saved images
+    easycopy --version    Print version
+    easycopy --help       Show this help
 
 CONFIG:
-    ~/.config/clipit/config.toml
+    ~/.config/easycopy/config.toml
 
 DATA:
-    ~/.local/share/clipit/index.json
-    ~/.local/share/clipit/images/
+    ~/.local/share/easycopy/index.json
+    ~/.local/share/easycopy/images/
 "#
     );
 }
@@ -114,8 +114,8 @@ fn run_daemon() {
             .name("precache".into())
             .spawn(move || {
                 // Cache desktop apps (slow I/O scan)
-                let apps = clipit_rs::desktop::load_desktop_apps();
-                if let Err(e) = clipit_rs::desktop::save_apps_cache(&apps) {
+                let apps = easycopy::desktop::load_desktop_apps();
+                if let Err(e) = easycopy::desktop::save_apps_cache(&apps) {
                     eprintln!("[daemon] warning: failed to write apps cache: {e}");
                 } else {
                     eprintln!("[daemon] cached {} desktop apps", apps.len());
@@ -168,7 +168,7 @@ fn run_daemon() {
             }
             Err(e) => {
                 eprintln!("[daemon] warning: could not register hotkey: {e}");
-                eprintln!("[daemon] you can still use: clipit-rs --popup");
+                eprintln!("[daemon] you can still use: easycopy --popup");
             }
         }
     } else {
@@ -176,7 +176,7 @@ fn run_daemon() {
             "[daemon] warning: could not parse hotkey '{}', running without hotkey",
             config.general.hotkey
         );
-        eprintln!("[daemon] you can still use: clipit-rs --popup");
+        eprintln!("[daemon] you can still use: easycopy --popup");
     }
 
     // Try X11 event-driven clipboard monitoring (falls back to timer polling)

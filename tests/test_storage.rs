@@ -1,5 +1,5 @@
-use clipit_rs::history::ClipItem;
-use clipit_rs::storage;
+use easycopy::history::ClipItem;
+use easycopy::storage;
 use std::collections::VecDeque;
 
 #[test]

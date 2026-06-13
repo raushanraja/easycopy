@@ -1,6 +1,6 @@
 # Build
 
-Build `clipit-rs` from source.
+Build `easycopy` from source.
 
 ## Requirements
 
@@ -13,11 +13,11 @@ Build `clipit-rs` from source.
 
 ```bash
 git clone <repo-url>
-cd clipit-rs
+cd easycopy
 cargo build --release
 ```
 
-The binary is written to `./target/release/clipit-rs`.
+The binary is written to `./target/release/easycopy`.
 
 ## Dependencies
 

@@ -1,5 +1,5 @@
 [package]
-name = "clipit-rs"
+name = "easycopy"
 version = "0.2.0"
 edition = "2021"
 description = "Minimal clipboard history manager for Linux"

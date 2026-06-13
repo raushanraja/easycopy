@@ -1,4 +1,4 @@
-use clipit_rs::history::{ClipItem, HistoryManager};
+use easycopy::history::{ClipItem, HistoryManager};
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -67,7 +67,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        clipit_rs::storage::save_history_to_path(&path, &items).unwrap();
+        easycopy::storage::save_history_to_path(&path, &items).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] save_history x100 (200 items): {:?}", elapsed);
@@ -79,7 +79,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        let _ = clipit_rs::storage::load_history_from_path(&path).unwrap();
+        let _ = easycopy::storage::load_history_from_path(&path).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] load_history x100 (200 items): {:?}", elapsed);
@@ -233,7 +233,7 @@ fn perf_ipc_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let sock_path = dir.path().join("test.sock");
 
-    let rx = clipit_rs::ipc::start_server(&sock_path).unwrap();
+    let rx = easycopy::ipc::start_server(&sock_path).unwrap();
 
     // Give server thread time to start
     std::thread::sleep(std::time::Duration::from_millis(50));
