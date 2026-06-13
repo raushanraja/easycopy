@@ -15,8 +15,7 @@ Linux clipboard history manager. Daemon monitors the clipboard, popup lets you b
 - X11 auto-paste support through `xdotool`
 
 <p align="center">
-  <strong>Searched app</strong><br>
-  <img src="assets/minimal.png" alt="Searched app in easycopy popup" width="360">
+  <img src="assets/demo.gif" alt="easycopy demo" width="600">
 </p>
 
 ## Screenshots
