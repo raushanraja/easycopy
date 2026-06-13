@@ -2,6 +2,9 @@
 
 Linux clipboard history manager. Daemon monitors the clipboard, popup lets you browse, search, and paste.
 
+> **Warning**
+> easycopy has only been tested on X11 with i3. Wayland and other desktop environments may have bugs, especially around global hotkeys, focus handling, and auto-paste.
+
 ## Features
 
 - Text and image clipboard history
