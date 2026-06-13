@@ -30,7 +30,7 @@ enum DisplayItem {
     App { app_idx: usize },
 }
 
-const SEARCH_HINT: &str = "Search clips, image size, or filename…";
+const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps";
 const FOOTER_HELP: &str =
     "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
 
@@ -580,26 +580,22 @@ impl PopupApp {
     }
 
     fn apply_filter(&mut self) {
-        let q = self.query.trim().to_lowercase();
-        let filtered: Vec<DisplayItem> = self
-            .clips
-            .iter()
-            .enumerate()
-            .filter_map(|(i, _)| {
-                if q.is_empty() || self.cached_clip_search[i].contains(q.as_str()) {
-                    Some(DisplayItem::Clip { clip_idx: i })
-                } else {
-                    None
-                }
-            })
-            .chain(self.apps.iter().enumerate().filter_map(|(i, _app)| {
-                if q.is_empty() || self.cached_app_search[i].contains(q.as_str()) {
-                    Some(DisplayItem::App { app_idx: i })
-                } else {
-                    None
-                }
-            }))
-            .collect();
+        let (apps_only, q) = filter_query(&self.query);
+        let clip_matches = self.clips.iter().enumerate().filter_map(|(i, _)| {
+            if !apps_only && (q.is_empty() || self.cached_clip_search[i].contains(q.as_str())) {
+                Some(DisplayItem::Clip { clip_idx: i })
+            } else {
+                None
+            }
+        });
+        let app_matches = self.apps.iter().enumerate().filter_map(|(i, _app)| {
+            if q.is_empty() || self.cached_app_search[i].contains(q.as_str()) {
+                Some(DisplayItem::App { app_idx: i })
+            } else {
+                None
+            }
+        });
+        let filtered: Vec<DisplayItem> = clip_matches.chain(app_matches).collect();
         self.filtered = filtered;
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
         self.scroll_to_selected_once = true;
@@ -2448,6 +2444,15 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
     }
 }
 
+fn filter_query(query: &str) -> (bool, String) {
+    let trimmed = query.trim();
+    if let Some(app_query) = trimmed.strip_prefix('/') {
+        (true, app_query.trim().to_lowercase())
+    } else {
+        (false, trimmed.to_lowercase())
+    }
+}
+
 fn preview_text(text: &str, max_chars: usize) -> String {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut preview = normalized.chars().take(max_chars).collect::<String>();
@@ -2582,6 +2587,18 @@ mod tests {
         assert!(item_matches_query(&img, "640x480"));
         assert!(item_matches_query(&img, "shot"));
         assert!(!item_matches_query(&text, "missing"));
+    }
+
+    #[test]
+    fn slash_prefix_switches_to_app_only_search() {
+        assert_eq!(filter_query("/firefox"), (true, "firefox".into()));
+        assert_eq!(filter_query(" / terminal "), (true, "terminal".into()));
+    }
+
+    #[test]
+    fn normal_search_includes_clipboard_items() {
+        assert_eq!(filter_query("hello"), (false, "hello".into()));
+        assert_eq!(filter_query("  "), (false, "".into()));
     }
 
     #[test]
