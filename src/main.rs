@@ -104,19 +104,6 @@ fn run_daemon() {
         }
     };
 
-    // ── Start the eframe popup in its own thread (hidden) ──
-    // This eliminates popup startup latency (2-5s) because the window
-    // stays alive in the background and is simply shown/hidden on hotkey.
-    use std::sync::mpsc;
-    let (paste_tx, paste_rx) = mpsc::channel::<ClipItem>();
-    let (history_update_tx, history_update_rx) = mpsc::channel::<Vec<ClipItem>>();
-    let (_popup_handle, popup_tx, _shutdown_tx) = popup::run_popup_in_daemon(
-        config.clone(),
-        paste_tx,
-        history_update_rx,
-    );
-    eprintln!("[daemon] popup window started (hidden)");
-
     // ── Pre-cache desktop apps and image thumbnails ──────────────
     // This runs in a background thread so the daemon loop starts
     // immediately.  The cache files are ready by the time the user
@@ -150,8 +137,7 @@ fn run_daemon() {
                             continue;
                         }
                         if let Ok(img) = image::open(&src_path) {
-                            let thumb =
-                                img.resize(52, 52, image::imageops::FilterType::Triangle);
+                            let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
                             let _ = thumb.save(&thumb_path);
                         }
                     }
@@ -214,7 +200,7 @@ fn run_daemon() {
     let mut tick_count = 0u64;
 
     loop {
-        // ── IPC + in-process paste requests from popup ────────────
+        // ── IPC paste requests from popup ────────────────────────
         if let Some(ref rx) = ipc_rx {
             while let Ok(item) = rx.try_recv() {
                 if let Ok(mut cb) = arboard::Clipboard::new() {
@@ -243,33 +229,6 @@ fn run_daemon() {
             }
         }
 
-        // ── In-process paste requests from popup thread ───────────
-        while let Ok(item) = paste_rx.try_recv() {
-            if let Ok(mut cb) = arboard::Clipboard::new() {
-                let write_ok = match &item {
-                    ClipItem::Text { content, .. } => cb.set_text(content.clone()).is_ok(),
-                    ClipItem::Image { filename, .. } => {
-                        if let Ok((w, h, data)) = storage::load_image(filename) {
-                            let img_data = arboard::ImageData {
-                                width: w as usize,
-                                height: h as usize,
-                                bytes: std::borrow::Cow::Owned(data),
-                            };
-                            cb.set_image(img_data).is_ok()
-                        } else {
-                            false
-                        }
-                    }
-                };
-                if write_ok && config.general.auto_paste {
-                    std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
-                    let _ = std::process::Command::new("xdotool")
-                        .args(["key", "ctrl+v"])
-                        .status();
-                }
-            }
-        }
-
         // ── Clipboard monitoring ──────────────────────────────────
         if let Some(ref mut x11) = x11_watcher {
             // Event-driven: check for XFixes selection events
@@ -286,10 +245,7 @@ fn run_daemon() {
                         if theme::is_debug_logging() {
                             eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
-                        // Forward new clip to popup thread so it's ready on re-show
-                        if let Some(processed) = process_clip_item(raw, &mut history) {
-                            let _ = history_update_tx.send(vec![processed]);
-                        }
+                        let _ = process_clip_item(raw, &mut history);
                     } else if theme::is_debug_logging() {
                         eprintln!("[daemon] monitor.poll() returned None (no change)");
                     }
@@ -302,19 +258,19 @@ fn run_daemon() {
                 tick_count = 0;
                 if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
-                        if let Some(processed) = process_clip_item(raw, &mut history) {
-                            let _ = history_update_tx.send(vec![processed]);
-                        }
+                        let _ = process_clip_item(raw, &mut history);
                     }
                 }
             }
         }
 
-        // ── Hotkey: show popup (instant — no process spawn!) ─────
+        // ── Hotkey: show popup ───────────────────────────────────
         if hotkey_registered {
             if let Ok(event) = hotkey_rx.try_recv() {
                 if event.state == HotKeyState::Pressed {
-                    let _ = popup_tx.send(());
+                    if let Ok(exe) = std::env::current_exe() {
+                        let _ = std::process::Command::new(exe).arg("--popup").spawn();
+                    }
                 }
             }
         }
@@ -335,15 +291,6 @@ fn run_daemon() {
         } else {
             std::thread::sleep(Duration::from_millis(tick_ms));
         }
-    }
-
-    // ── Graceful shutdown (reached when daemon receives SIGTERM/etc.) ──
-    #[allow(unreachable_code, unused)]
-    {
-        eprintln!("[daemon] shutting down popup...");
-        let _ = _shutdown_tx.send(());
-        let _ = _popup_handle.join();
-        eprintln!("[daemon] popup exited");
     }
 }
 
