@@ -5,6 +5,7 @@ use crate::storage;
 use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 
 // ================================================================
@@ -127,6 +128,56 @@ fn is_daemon_running() -> bool {
     false
 }
 
+/// Run the popup UI inside the daemon process, on its own thread.
+/// The window starts hidden. Returns (thread handle, show_tx, shutdown_tx).
+pub fn run_popup_in_daemon(
+    config: Config,
+    paste_tx: mpsc::Sender<ClipItem>,
+    history_rx: mpsc::Receiver<Vec<ClipItem>>,
+) -> (std::thread::JoinHandle<()>, mpsc::Sender<()>, mpsc::Sender<()>) {
+    let width = config.general.popup_width;
+    let height = config.general.popup_height;
+
+    theme::set_debug_logging(config.general.debug_logging);
+
+    let visible = Arc::new(AtomicBool::new(false));
+    let (show_tx, show_rx) = mpsc::channel();
+    let (shutdown_tx, shutdown_rx) = mpsc::channel();
+
+    let handle = std::thread::spawn(move || {
+        // Construct NativeOptions inside the thread (it may not be Send)
+        let options = eframe::NativeOptions {
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size([width, height])
+                .with_decorations(false)
+                .with_always_on_top()
+                .with_resizable(false)
+                .with_transparent(true)
+                .with_visible(false), // hidden at startup
+            ..Default::default()
+        };
+
+        let _ = eframe::run_native(
+            "easycopy",
+            options,
+            Box::new(move |cc| {
+                theme::apply_theme_and_fonts(&cc.egui_ctx, &config);
+                Ok(Box::new(PopupApp::new_daemon(
+                    cc,
+                    config,
+                    show_rx,
+                    shutdown_rx,
+                    paste_tx,
+                    history_rx,
+                    visible,
+                )))
+            }),
+        );
+    });
+
+    (handle, show_tx, shutdown_tx)
+}
+
 fn simulate_paste() {
     // xdotool is the most reliable simple option on X11. Wayland users can
     // disable auto_paste or provide their own compositor-level paste binding.
@@ -164,6 +215,13 @@ struct PopupApp {
     cached_clip_search: Vec<String>,
     cached_clip_file_sizes: HashMap<String, u64>,
     cached_app_search: Vec<String>,
+    // Daemon-mode fields (used when popup runs inside the daemon process)
+    daemon_mode: bool,
+    visible: Arc<AtomicBool>,
+    show_rx: Option<mpsc::Receiver<()>>,
+    shutdown_rx: Option<mpsc::Receiver<()>>,
+    daemon_paste_tx: Option<mpsc::Sender<ClipItem>>,
+    history_update_rx: Option<mpsc::Receiver<Vec<ClipItem>>>,
 }
 
 impl PopupApp {
@@ -318,6 +376,147 @@ impl PopupApp {
             cached_clip_search: Vec::new(),
             cached_clip_file_sizes: HashMap::new(),
             cached_app_search: Vec::new(),
+            daemon_mode: false,
+            visible: Arc::new(AtomicBool::new(false)),
+            show_rx: None,
+            shutdown_rx: None,
+            daemon_paste_tx: None,
+            history_update_rx: None,
+        }
+    }
+
+    /// Constructor for daemon-mode (popup lives inside the daemon process).
+    /// The window starts hidden; external channels drive show/hide/shutdown.
+    fn new_daemon(
+        _cc: &eframe::CreationContext<'_>,
+        config: Config,
+        show_rx: mpsc::Receiver<()>,
+        shutdown_rx: mpsc::Receiver<()>,
+        daemon_paste_tx: mpsc::Sender<ClipItem>,
+        history_update_rx: mpsc::Receiver<Vec<ClipItem>>,
+        visible: Arc<AtomicBool>,
+    ) -> Self {
+        // ── All heavy I/O happens in background threads ──
+        // (Same background threads as new(), copied inline for simplicity)
+
+        // History load + cache computation thread
+        let (clip_tx, clip_rx) = std::sync::mpsc::channel();
+        let preview_chars = config.general.preview_chars;
+        std::thread::spawn(move || {
+            let clips: Vec<ClipItem> = storage::load_history().into_iter().collect();
+            let cached_clip_char_counts: Vec<usize> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => content.chars().count(),
+                    _ => 0,
+                })
+                .collect();
+            let cached_clip_previews: Vec<String> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => preview_text(content, preview_chars),
+                    _ => String::new(),
+                })
+                .collect();
+            let cached_clip_search: Vec<String> = clips
+                .iter()
+                .map(|item| match item {
+                    ClipItem::Text { content, .. } => content.to_lowercase(),
+                    ClipItem::Image { width, height, filename, .. } =>
+                        format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase(),
+                })
+                .collect();
+            let mut cached_clip_file_sizes = HashMap::new();
+            for item in &clips {
+                if let ClipItem::Image { filename, .. } = item {
+                    if !filename.is_empty() {
+                        if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+                            cached_clip_file_sizes.insert(filename.clone(), meta.len());
+                        }
+                    }
+                }
+            }
+            let _ = clip_tx.send(LoadedData { clips, cached_clip_char_counts, cached_clip_previews, cached_clip_search, cached_clip_file_sizes });
+        });
+
+        // ── Async image thumbnail loading ──
+        let (tx, rx) = std::sync::mpsc::channel();
+        let clips_for_images: Vec<ClipItem> = storage::load_history().into_iter().collect();
+        std::thread::spawn(move || {
+            for item in clips_for_images {
+                if let ClipItem::Image { filename, .. } = item {
+                    if filename.is_empty() { continue; }
+                    let images_dir = Config::images_dir();
+                    let thumb_path = images_dir.join(format!("thumb_{}", filename));
+                    if let Ok(img) = image::open(&thumb_path) {
+                        let rgba = img.to_rgba8();
+                        let size = [rgba.width() as usize, rgba.height() as usize];
+                        let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                        let _ = tx.send((filename, ci));
+                    } else {
+                        let path = images_dir.join(&filename);
+                        if let Ok(img) = image::open(path) {
+                            let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
+                            let rgba = thumb.to_rgba8();
+                            let size = [rgba.width() as usize, rgba.height() as usize];
+                            let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                            let _ = thumb.save(&thumb_path);
+                            let _ = tx.send((filename, ci));
+                        }
+                    }
+                }
+            }
+        });
+
+        // ── Async desktop app loading ──
+        let (app_tx, app_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            if let Some(cached) = crate::desktop::load_apps_cache() {
+                let _ = app_tx.send(cached);
+                crate::desktop::refresh_and_cache_apps();
+            } else {
+                let apps = crate::desktop::refresh_and_cache_apps();
+                let _ = app_tx.send(apps);
+            }
+        });
+
+        let theme_colors = ThemeColors::from_config(&config);
+
+        Self {
+            clips: Vec::new(),
+            apps: Vec::new(),
+            filtered: Vec::new(),
+            query: String::new(),
+            selected: 0,
+            textures: HashMap::new(),
+            app_icon_textures: HashMap::new(),
+            should_paste: Arc::new(AtomicBool::new(false)),
+            selected_item_out: Arc::new(std::sync::Mutex::new(None)),
+            preview_chars: config.general.preview_chars,
+            focus_search_once: true,
+            scroll_to_selected_once: false,
+            config,
+            theme_colors,
+            preview_image: None,
+            lightbox_zoom: 1.0,
+            lightbox_pan: egui::Vec2::ZERO,
+            focused_once: false,
+            rx,
+            clip_rx,
+            clips_loaded: false,
+            app_rx,
+            apps_loaded: false,
+            cached_clip_char_counts: Vec::new(),
+            cached_clip_previews: Vec::new(),
+            cached_clip_search: Vec::new(),
+            cached_clip_file_sizes: HashMap::new(),
+            cached_app_search: Vec::new(),
+            daemon_mode: true,
+            visible,
+            show_rx: Some(show_rx),
+            shutdown_rx: Some(shutdown_rx),
+            daemon_paste_tx: Some(daemon_paste_tx),
+            history_update_rx: Some(history_update_rx),
         }
     }
 
@@ -450,11 +649,21 @@ impl PopupApp {
 
     fn select_and_close(&self, ctx: &egui::Context) {
         if let Some(item) = self.selected_clip() {
-            if let Ok(mut out) = self.selected_item_out.lock() {
-                *out = Some(item.clone());
+            if self.daemon_mode {
+                // Daemon mode: send item via channel and hide window
+                if let Some(ref tx) = self.daemon_paste_tx {
+                    let _ = tx.send(item.clone());
+                }
+                self.visible.store(false, Ordering::Relaxed);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            } else {
+                // Standalone mode: write to shared output and close process
+                if let Ok(mut out) = self.selected_item_out.lock() {
+                    *out = Some(item.clone());
+                }
+                self.should_paste.store(true, Ordering::Relaxed);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            self.should_paste.store(true, Ordering::Relaxed);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
             // Launch app, keep popup open
             if let Some(app) = self.apps.get(*app_idx) {
@@ -1878,6 +2087,97 @@ impl PopupApp {
 
 impl eframe::App for PopupApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // ── Daemon-mode preamble ──
+        if self.daemon_mode {
+            // 1. Check shutdown signal
+            let should_shutdown = self.shutdown_rx.as_mut().and_then(|rx| rx.try_recv().ok()).is_some();
+            if should_shutdown {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                return;
+            }
+
+            // 2. Drain history updates (new clips discovered while hidden)
+            {
+                let mut new_items: Vec<ClipItem> = Vec::new();
+                if let Some(rx) = self.history_update_rx.as_mut() {
+                    while let Ok(clips) = rx.try_recv() {
+                        new_items.extend(clips);
+                    }
+                }
+                if !new_items.is_empty() {
+                    let start_idx = self.clips.len();
+                    self.clips.extend(new_items);
+                    for item in &self.clips[start_idx..] {
+                        match item {
+                            ClipItem::Text { content, .. } => {
+                                self.cached_clip_char_counts.push(content.chars().count());
+                                self.cached_clip_previews.push(preview_text(content, self.preview_chars));
+                                self.cached_clip_search.push(content.to_lowercase());
+                            }
+                            ClipItem::Image { filename, .. } => {
+                                self.cached_clip_char_counts.push(0);
+                                self.cached_clip_previews.push(String::new());
+                                self.cached_clip_search.push(filename.to_lowercase());
+                            }
+                        }
+                    }
+                    self.apply_filter();
+                    ctx.request_repaint();
+                }
+            }
+
+            // 3. Check show signal
+            let show_requested = self.show_rx.as_mut().and_then(|rx| rx.try_recv().ok()).is_some();
+            if show_requested {
+                self.visible.store(true, Ordering::Relaxed);
+                self.focused_once = false;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.request_repaint();
+            }
+
+            // 4. If hidden and no show signal, skip rendering entirely
+            if !self.visible.load(Ordering::Relaxed) {
+                // Still drain thumbnail/channel caches even when hidden
+                // (handled below by the unconditional drain loops)
+                // But skip the rest of update if nothing to show
+                let mut loaded_any = false;
+                while let Ok((filename, ci)) = self.rx.try_recv() {
+                    let tex = ctx.load_texture(&filename, ci, egui::TextureOptions::LINEAR);
+                    self.textures.insert(filename, tex);
+                    loaded_any = true;
+                }
+                // Still drain clip_rx and app_rx to populate data for when we show
+                if !self.clips_loaded {
+                    if let Ok(data) = self.clip_rx.try_recv() {
+                        self.clips = data.clips;
+                        self.cached_clip_char_counts = data.cached_clip_char_counts;
+                        self.cached_clip_previews = data.cached_clip_previews;
+                        self.cached_clip_search = data.cached_clip_search;
+                        self.cached_clip_file_sizes = data.cached_clip_file_sizes;
+                        self.clips_loaded = true;
+                        self.filtered = (0..self.clips.len())
+                            .map(|clip_idx| DisplayItem::Clip { clip_idx })
+                            .collect();
+                        self.apply_filter();
+                    }
+                }
+                if !self.apps_loaded {
+                    if let Ok(apps) = self.app_rx.try_recv() {
+                        self.apps = apps;
+                        self.cached_app_search = self.apps.iter().map(|app| {
+                            format!("{} {} {}", app.name.to_lowercase(), app.comment.to_lowercase(), app.exec.to_lowercase())
+                        }).collect();
+                        self.apps_loaded = true;
+                        self.apply_filter();
+                    }
+                }
+                if loaded_any {
+                    ctx.request_repaint();
+                }
+                return; // skip rendering while hidden
+            }
+        }
+
         let mut loaded_any = false;
         while let Ok((filename, ci)) = self.rx.try_recv() {
             let tex = ctx.load_texture(&filename, ci, egui::TextureOptions::LINEAR);
@@ -1934,7 +2234,12 @@ impl eframe::App for PopupApp {
                 self.focused_once = true;
             }
             if self.focused_once && !focused {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if self.daemon_mode {
+                    self.visible.store(false, Ordering::Relaxed);
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
                 return;
             }
         }
@@ -1971,6 +2276,9 @@ impl eframe::App for PopupApp {
         if close {
             if self.preview_image.is_some() {
                 self.preview_image = None;
+            } else if self.daemon_mode {
+                self.visible.store(false, Ordering::Relaxed);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
