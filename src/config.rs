@@ -46,6 +46,9 @@ fn default_enable_clipping() -> bool {
 fn default_close_on_focus_out() -> bool {
     true
 }
+fn default_keep_search_on_reopen() -> bool {
+    true
+}
 fn default_debug_logging() -> bool {
     false
 }
@@ -100,6 +103,7 @@ pub struct GeneralConfig {
     pub enable_theming: bool,
     pub enable_clipping: bool,
     pub close_on_focus_out: bool,
+    pub keep_search_on_reopen: bool,
     /// Enable verbose debug logging (font resolution, etc.)
     pub debug_logging: bool,
     /// Font preset: "default", "dejavu", "liberation", "fira", "jetbrains"
@@ -132,6 +136,7 @@ impl Default for GeneralConfig {
             enable_theming: default_enable_theming(),
             enable_clipping: default_enable_clipping(),
             close_on_focus_out: default_close_on_focus_out(),
+            keep_search_on_reopen: default_keep_search_on_reopen(),
             debug_logging: default_debug_logging(),
             font_preset: default_font_preset(),
             font_size: default_font_size(),
@@ -336,6 +341,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);
+        assert_eq!(cfg.general.keep_search_on_reopen, true);
         assert_eq!(cfg.general.debug_logging, false);
         assert_eq!(cfg.general.font_preset, "default");
         assert_eq!(cfg.general.font_size, "medium");

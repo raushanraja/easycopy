@@ -1354,6 +1354,37 @@ impl PopupApp {
                                             ui.close_menu();
                                         }
                                     }
+
+                                    // ── Behavior ──
+                                    ui.add_space(6.0);
+                                    ui.label(
+                                        egui::RichText::new("BEHAVIOR").size(11.0).color(
+                                            self.theme_colors
+                                                .as_ref()
+                                                .map_or(ui.visuals().weak_text_color(), |c| {
+                                                    c.weak_text_color
+                                                }),
+                                        ),
+                                    );
+                                    ui.separator();
+                                    let keep_search = self.config.general.keep_search_on_reopen;
+                                    let fg = if keep_search {
+                                        egui::Color32::WHITE
+                                    } else {
+                                        self.theme_colors
+                                            .as_ref()
+                                            .map_or(ui.visuals().text_color(), |c| c.text_color)
+                                    };
+                                    if draw_item(
+                                        ui,
+                                        "Keep search on reopen",
+                                        keep_search,
+                                        fg,
+                                        self.theme_colors.as_ref(),
+                                    ) {
+                                        self.config.general.keep_search_on_reopen = !keep_search;
+                                        let _ = self.config.save();
+                                    }
                                 },
                             );
                         }
@@ -2151,6 +2182,10 @@ impl eframe::App for PopupApp {
                 self.focused_once = false;
                 self.focus_search_once = true;
                 self.hide_command_sent = false;
+                if !self.config.general.keep_search_on_reopen && !self.query.is_empty() {
+                    self.query.clear();
+                    self.apply_filter();
+                }
                 reveal_after_render = true;
                 ctx.request_repaint();
             }

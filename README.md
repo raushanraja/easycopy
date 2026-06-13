@@ -86,6 +86,7 @@ preview_chars = 220
 paste_delay_ms = 120
 theme = "dark"            # dark | light | nord | catppuccin | dracula
 enable_theming = true
+keep_search_on_reopen = true
 debug_logging = false
 font_preset = "default"   # default | dejavu | liberation | fira | jetbrains | iosevka
 font_size = "medium"      # small | medium | large
