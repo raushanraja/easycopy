@@ -27,7 +27,7 @@ struct LoadedData {
 #[derive(Debug, Clone)]
 enum DisplayItem {
     Clip { clip_idx: usize },
-    App  { app_idx: usize },
+    App { app_idx: usize },
 }
 
 const SEARCH_HINT: &str = "Search clips, image size, or filename…";
@@ -134,7 +134,11 @@ pub fn run_popup_in_daemon(
     config: Config,
     paste_tx: mpsc::Sender<ClipItem>,
     history_rx: mpsc::Receiver<Vec<ClipItem>>,
-) -> (std::thread::JoinHandle<()>, mpsc::Sender<()>, mpsc::Sender<()>) {
+) -> (
+    std::thread::JoinHandle<()>,
+    mpsc::Sender<()>,
+    mpsc::Sender<()>,
+) {
     let width = config.general.popup_width;
     let height = config.general.popup_height;
 
@@ -228,6 +232,7 @@ struct PopupApp {
     shutdown_rx: Option<mpsc::Receiver<()>>,
     daemon_paste_tx: Option<mpsc::Sender<ClipItem>>,
     history_update_rx: Option<mpsc::Receiver<Vec<ClipItem>>>,
+    hide_command_sent: bool,
 }
 
 impl PopupApp {
@@ -283,8 +288,7 @@ impl PopupApp {
             for item in &clips {
                 if let ClipItem::Image { filename, .. } = item {
                     if !filename.is_empty() {
-                        if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename))
-                        {
+                        if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
                             cached_clip_file_sizes.insert(filename.clone(), meta.len());
                         }
                     }
@@ -388,6 +392,7 @@ impl PopupApp {
             shutdown_rx: None,
             daemon_paste_tx: None,
             history_update_rx: None,
+            hide_command_sent: false,
         }
     }
 
@@ -428,8 +433,16 @@ impl PopupApp {
                 .iter()
                 .map(|item| match item {
                     ClipItem::Text { content, .. } => content.to_lowercase(),
-                    ClipItem::Image { width, height, filename, .. } =>
-                        format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename).to_lowercase(),
+                    ClipItem::Image {
+                        width,
+                        height,
+                        filename,
+                        ..
+                    } => format!(
+                        "{}\u{00d7}{} {}x{} {}",
+                        width, height, width, height, filename
+                    )
+                    .to_lowercase(),
                 })
                 .collect();
             let mut cached_clip_file_sizes = HashMap::new();
@@ -442,7 +455,13 @@ impl PopupApp {
                     }
                 }
             }
-            let _ = clip_tx.send(LoadedData { clips, cached_clip_char_counts, cached_clip_previews, cached_clip_search, cached_clip_file_sizes });
+            let _ = clip_tx.send(LoadedData {
+                clips,
+                cached_clip_char_counts,
+                cached_clip_previews,
+                cached_clip_search,
+                cached_clip_file_sizes,
+            });
         });
 
         // ── Async image thumbnail loading ──
@@ -451,7 +470,9 @@ impl PopupApp {
         std::thread::spawn(move || {
             for item in clips_for_images {
                 if let ClipItem::Image { filename, .. } = item {
-                    if filename.is_empty() { continue; }
+                    if filename.is_empty() {
+                        continue;
+                    }
                     let images_dir = Config::images_dir();
                     let thumb_path = images_dir.join(format!("thumb_{}", filename));
                     if let Ok(img) = image::open(&thumb_path) {
@@ -523,6 +544,7 @@ impl PopupApp {
             shutdown_rx: Some(shutdown_rx),
             daemon_paste_tx: Some(daemon_paste_tx),
             history_update_rx: Some(history_update_rx),
+            hide_command_sent: false,
         }
     }
 
@@ -530,6 +552,14 @@ impl PopupApp {
         self.theme_colors
             .as_ref()
             .map_or(ui.visuals().weak_text_color(), |t| t.weak_text_color)
+    }
+
+    fn hide_daemon_popup(&mut self, ctx: &egui::Context) {
+        self.visible.store(false, Ordering::Relaxed);
+        if !self.hide_command_sent {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.hide_command_sent = true;
+        }
     }
 
     fn load_large_image(&self, ctx: &egui::Context, filename: &str) -> Option<egui::TextureHandle> {
@@ -653,15 +683,14 @@ impl PopupApp {
         }
     }
 
-    fn select_and_close(&self, ctx: &egui::Context) {
+    fn select_and_close(&mut self, ctx: &egui::Context) {
         if let Some(item) = self.selected_clip() {
             if self.daemon_mode {
                 // Daemon mode: send item via channel and hide window
                 if let Some(ref tx) = self.daemon_paste_tx {
                     let _ = tx.send(item.clone());
                 }
-                self.visible.store(false, Ordering::Relaxed);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.hide_daemon_popup(ctx);
             } else {
                 // Standalone mode: write to shared output and close process
                 if let Ok(mut out) = self.selected_item_out.lock() {
@@ -796,7 +825,8 @@ impl PopupApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let label_text = format!("{} clips · {} apps", self.clips.len(), self.apps.len());
+                    let label_text =
+                        format!("{} clips · {} apps", self.clips.len(), self.apps.len());
                     let label_width = 75.0;
                     let search_width = (ui.available_width() - label_width - 8.0).max(100.0);
 
@@ -894,12 +924,7 @@ impl PopupApp {
                 let weak_color = self.weak_color(ui);
 
                 if !self.clips_loaded {
-                    draw_empty_state(
-                        ui,
-                        "Loading…",
-                        "Reading clipboard history.",
-                        weak_color,
-                    );
+                    draw_empty_state(ui, "Loading…", "Reading clipboard history.", weak_color);
                     ui.ctx().request_repaint(); // keep animating until loaded
                     return;
                 }
@@ -1471,59 +1496,49 @@ impl PopupApp {
             ClipItem::Text { content, timestamp } => {
                 ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        theme::draw_icon_badge(
-                            ui,
-                            "text",
-                            is_selected,
-                            self.theme_colors.as_ref(),
-                        );
+                        theme::draw_icon_badge(ui, "text", is_selected, self.theme_colors.as_ref());
                         ui.add_space(8.0);
 
                         let available_width = (ui.available_width() - 40.0).max(120.0);
-                        ui.allocate_ui(
-                            egui::vec2(available_width, row_height - 20.0),
-                            |ui| {
-                                ui.vertical(|ui| {
-                                    let content_height = 35.0;
-                                    let available_h = ui.available_height();
-                                    if available_h > content_height {
-                                        ui.add_space((available_h - content_height) / 2.0);
-                                    }
-                                    ui.set_width(available_width);
-                                    let preview = self
-                                        .cached_clip_previews
-                                        .get(orig_idx)
-                                        .cloned()
-                                        .unwrap_or_else(|| {
-                                            preview_text(content, self.preview_chars)
-                                        });
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(preview)
-                                                .size(15.0)
-                                                .monospace()
-                                                .strong(),
-                                        )
-                                        .truncate(),
-                                    );
-                                    ui.add_space(2.0);
-                                    let char_count = self
-                                        .cached_clip_char_counts
-                                        .get(orig_idx)
-                                        .copied()
-                                        .unwrap_or_else(|| content.chars().count());
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} chars · {}",
-                                            char_count,
-                                            relative_time(*timestamp)
-                                        ))
-                                        .size(12.5)
-                                        .color(self.weak_color(ui)),
-                                    );
-                                });
-                            },
-                        );
+                        ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
+                            ui.vertical(|ui| {
+                                let content_height = 35.0;
+                                let available_h = ui.available_height();
+                                if available_h > content_height {
+                                    ui.add_space((available_h - content_height) / 2.0);
+                                }
+                                ui.set_width(available_width);
+                                let preview = self
+                                    .cached_clip_previews
+                                    .get(orig_idx)
+                                    .cloned()
+                                    .unwrap_or_else(|| preview_text(content, self.preview_chars));
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(preview)
+                                            .size(15.0)
+                                            .monospace()
+                                            .strong(),
+                                    )
+                                    .truncate(),
+                                );
+                                ui.add_space(2.0);
+                                let char_count = self
+                                    .cached_clip_char_counts
+                                    .get(orig_idx)
+                                    .copied()
+                                    .unwrap_or_else(|| content.chars().count());
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "{} chars · {}",
+                                        char_count,
+                                        relative_time(*timestamp)
+                                    ))
+                                    .size(12.5)
+                                    .color(self.weak_color(ui)),
+                                );
+                            });
+                        });
 
                         if row < 9 {
                             ui.with_layout(
@@ -1576,42 +1591,33 @@ impl PopupApp {
                         ui.add_space(12.0);
 
                         let available_width = (ui.available_width() - 40.0).max(120.0);
-                        ui.allocate_ui(
-                            egui::vec2(available_width, row_height - 20.0),
-                            |ui| {
-                                ui.vertical(|ui| {
-                                    let content_height = 35.0;
-                                    let available_h = ui.available_height();
-                                    if available_h > content_height {
-                                        ui.add_space((available_h - content_height) / 2.0);
-                                    }
-                                    ui.set_width(available_width);
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(format!(
-                                                "Image {}×{}",
-                                                width, height
-                                            ))
+                        ui.allocate_ui(egui::vec2(available_width, row_height - 20.0), |ui| {
+                            ui.vertical(|ui| {
+                                let content_height = 35.0;
+                                let available_h = ui.available_height();
+                                if available_h > content_height {
+                                    ui.add_space((available_h - content_height) / 2.0);
+                                }
+                                ui.set_width(available_width);
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(format!("Image {}×{}", width, height))
                                             .size(15.0)
                                             .strong(),
-                                        )
-                                        .truncate(),
-                                    );
-                                    ui.add_space(2.0);
-                                    let file_size = self
-                                        .cached_clip_file_sizes
-                                        .get(filename)
-                                        .copied();
-                                    ui.label(
-                                        egui::RichText::new(image_subtitle_cached(
-                                            filename, *timestamp, file_size,
-                                        ))
-                                        .size(12.5)
-                                        .color(self.weak_color(ui)),
-                                    );
-                                });
-                            },
-                        );
+                                    )
+                                    .truncate(),
+                                );
+                                ui.add_space(2.0);
+                                let file_size = self.cached_clip_file_sizes.get(filename).copied();
+                                ui.label(
+                                    egui::RichText::new(image_subtitle_cached(
+                                        filename, *timestamp, file_size,
+                                    ))
+                                    .size(12.5)
+                                    .color(self.weak_color(ui)),
+                                );
+                            });
+                        });
 
                         if row < 9 {
                             ui.with_layout(
@@ -1763,12 +1769,8 @@ impl PopupApp {
                     ui.vertical(|ui| {
                         ui.set_width((ui.available_width() - 40.0).max(120.0));
                         ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(&app.name)
-                                    .size(15.0)
-                                    .strong(),
-                            )
-                            .truncate(),
+                            egui::Label::new(egui::RichText::new(&app.name).size(15.0).strong())
+                                .truncate(),
                         );
                         if !app.comment.is_empty() {
                             ui.add_space(2.0);
@@ -2093,10 +2095,24 @@ impl PopupApp {
 
 impl eframe::App for PopupApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let mut reveal_after_render = false;
+
         // ── Daemon-mode preamble ──
         if self.daemon_mode {
+            // Window-manager close shortcuts (for example i3 mod+shift+q) must
+            // hide the resident popup, not terminate its event loop.
+            if ctx.input(|i| i.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.hide_daemon_popup(ctx);
+                return;
+            }
+
             // 1. Check shutdown signal
-            let should_shutdown = self.shutdown_rx.as_mut().and_then(|rx| rx.try_recv().ok()).is_some();
+            let should_shutdown = self
+                .shutdown_rx
+                .as_mut()
+                .and_then(|rx| rx.try_recv().ok())
+                .is_some();
             if should_shutdown {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
@@ -2117,7 +2133,8 @@ impl eframe::App for PopupApp {
                         match item {
                             ClipItem::Text { content, .. } => {
                                 self.cached_clip_char_counts.push(content.chars().count());
-                                self.cached_clip_previews.push(preview_text(content, self.preview_chars));
+                                self.cached_clip_previews
+                                    .push(preview_text(content, self.preview_chars));
                                 self.cached_clip_search.push(content.to_lowercase());
                             }
                             ClipItem::Image { filename, .. } => {
@@ -2133,16 +2150,27 @@ impl eframe::App for PopupApp {
             }
 
             // 3. Check show signal
-            let show_requested = self.show_rx.as_mut().and_then(|rx| rx.try_recv().ok()).is_some();
+            let show_requested = self
+                .show_rx
+                .as_mut()
+                .and_then(|rx| rx.try_recv().ok())
+                .is_some();
             if show_requested {
                 self.visible.store(true, Ordering::Relaxed);
                 self.focused_once = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                self.focus_search_once = true;
+                self.hide_command_sent = false;
+                reveal_after_render = true;
                 ctx.request_repaint();
             }
 
             // 4. If hidden and no show signal, skip rendering entirely
             if !self.visible.load(Ordering::Relaxed) {
+                if !self.hide_command_sent {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    self.hide_command_sent = true;
+                }
+
                 // Still drain thumbnail/channel caches even when hidden
                 // (handled below by the unconditional drain loops)
                 // But skip the rest of update if nothing to show
@@ -2170,9 +2198,18 @@ impl eframe::App for PopupApp {
                 if !self.apps_loaded {
                     if let Ok(apps) = self.app_rx.try_recv() {
                         self.apps = apps;
-                        self.cached_app_search = self.apps.iter().map(|app| {
-                            format!("{} {} {}", app.name.to_lowercase(), app.comment.to_lowercase(), app.exec.to_lowercase())
-                        }).collect();
+                        self.cached_app_search = self
+                            .apps
+                            .iter()
+                            .map(|app| {
+                                format!(
+                                    "{} {} {}",
+                                    app.name.to_lowercase(),
+                                    app.comment.to_lowercase(),
+                                    app.exec.to_lowercase()
+                                )
+                            })
+                            .collect();
                         self.apps_loaded = true;
                         self.apply_filter();
                     }
@@ -2244,8 +2281,7 @@ impl eframe::App for PopupApp {
             }
             if self.focused_once && !focused {
                 if self.daemon_mode {
-                    self.visible.store(false, Ordering::Relaxed);
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    self.hide_daemon_popup(ctx);
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
@@ -2286,8 +2322,7 @@ impl eframe::App for PopupApp {
             if self.preview_image.is_some() {
                 self.preview_image = None;
             } else if self.daemon_mode {
-                self.visible.store(false, Ordering::Relaxed);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.hide_daemon_popup(ctx);
             } else {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -2312,7 +2347,8 @@ impl eframe::App for PopupApp {
         }
         if ctrl_o {
             if let Some((ref filename, _)) = self.preview_image {
-                let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
+                let _ =
+                    crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
             } else if let Some(item) = self.selected_clip() {
                 let target = match item {
                     ClipItem::Text { content, .. } => {
@@ -2373,6 +2409,10 @@ impl eframe::App for PopupApp {
                 });
                 self.draw_lightbox(ui);
             });
+
+        if reveal_after_render {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+        }
     }
 }
 
