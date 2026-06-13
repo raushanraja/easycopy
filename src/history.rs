@@ -5,7 +5,12 @@ use std::collections::VecDeque;
 #[serde(tag = "type")]
 pub enum ClipItem {
     #[serde(rename = "text")]
-    Text { content: String, timestamp: u64 },
+    Text {
+        content: String,
+        timestamp: u64,
+        #[serde(default)]
+        use_count: u64,
+    },
     #[serde(rename = "image")]
     Image {
         width: u32,
@@ -14,6 +19,8 @@ pub enum ClipItem {
         filename: String,
         #[serde(skip)]
         data: Option<Vec<u8>>,
+        #[serde(default)]
+        use_count: u64,
     },
 }
 
@@ -158,6 +165,7 @@ mod tests {
         ClipItem::Text {
             content: s.into(),
             timestamp: ts,
+            use_count: 0,
         }
     }
 

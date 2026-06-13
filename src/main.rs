@@ -311,6 +311,7 @@ fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<Clip
                 timestamp,
                 filename,
                 data: None,
+                use_count: 0,
             },
             Err(e) => {
                 eprintln!("[daemon] failed to save image: {e}");

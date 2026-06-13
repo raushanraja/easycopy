@@ -4,6 +4,7 @@ fn text(s: &str, ts: u64) -> ClipItem {
     ClipItem::Text {
         content: s.into(),
         timestamp: ts,
+        use_count: 0,
     }
 }
 
@@ -14,6 +15,7 @@ fn img(filename: &str, ts: u64) -> ClipItem {
         timestamp: ts,
         filename: filename.into(),
         data: None,
+        use_count: 0,
     }
 }
 
@@ -42,7 +44,7 @@ fn duplicate_moves_to_front() {
     assert!(hm.add(text("a", 4)));
     assert_eq!(hm.len(), 3);
     match hm.items().front().unwrap() {
-        ClipItem::Text { content, timestamp } => {
+        ClipItem::Text { content, timestamp, .. } => {
             assert_eq!(content, "a");
             assert_eq!(*timestamp, 4);
         }

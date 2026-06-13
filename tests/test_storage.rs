@@ -11,6 +11,7 @@ fn index_json_roundtrip_through_storage_helpers() {
     items.push_back(ClipItem::Text {
         content: "hello".into(),
         timestamp: 1234567890,
+        use_count: 0,
     });
     items.push_back(ClipItem::Image {
         width: 640,
@@ -18,6 +19,7 @@ fn index_json_roundtrip_through_storage_helpers() {
         timestamp: 1234567891,
         filename: "img_test.png".into(),
         data: None,
+        use_count: 0,
     });
 
     storage::save_history_to_path(&path, &items).unwrap();
@@ -25,7 +27,7 @@ fn index_json_roundtrip_through_storage_helpers() {
     assert_eq!(loaded.len(), 2);
 
     match &loaded[0] {
-        ClipItem::Text { content, timestamp } => {
+        ClipItem::Text { content, timestamp, .. } => {
             assert_eq!(content, "hello");
             assert_eq!(*timestamp, 1234567890);
         }
@@ -55,6 +57,7 @@ fn image_data_not_in_json() {
         timestamp: 100,
         filename: "test.png".into(),
         data: Some(vec![0u8; 400]),
+        use_count: 0,
     };
     let json = serde_json::to_string(&item).unwrap();
     assert!(!json.contains("data"));
@@ -87,6 +90,7 @@ fn orphan_cleanup_removes_unused_files() {
         timestamp: 1,
         filename: "used.png".into(),
         data: None,
+        use_count: 0,
     });
 
     let removed = storage::cleanup_orphaned_in_dir(dir.path(), &items).unwrap();

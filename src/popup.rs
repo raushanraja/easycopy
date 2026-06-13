@@ -359,13 +359,29 @@ impl PopupApp {
 
     fn apply_filter(&mut self) {
         let (apps_only, q) = filter_query(&self.query);
-        let clip_matches = self.clips.iter().enumerate().filter_map(|(i, _)| {
-            if !apps_only && (q.is_empty() || self.cached_clip_search[i].contains(q.as_str())) {
-                Some(DisplayItem::Clip { clip_idx: i })
-            } else {
-                None
-            }
+        // Collect matching clips, then sort by use_count descending so
+        // frequently used items appear first.
+        let mut clip_matches: Vec<(usize, &ClipItem)> = self
+            .clips
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                !apps_only && (q.is_empty() || self.cached_clip_search[*i].contains(q.as_str()))
+            })
+            .collect();
+        clip_matches.sort_by(|(_, a), (_, b)| {
+            let a_count = match a {
+                ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
+            };
+            let b_count = match b {
+                ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
+            };
+            b_count.cmp(&a_count) // descending: most-used first
         });
+        let clip_matches = clip_matches
+            .into_iter()
+            .map(|(i, _)| DisplayItem::Clip { clip_idx: i });
+
         let app_matches = self.apps.iter().enumerate().filter_map(|(i, _app)| {
             if q.is_empty() || self.cached_app_search[i].contains(q.as_str()) {
                 Some(DisplayItem::App { app_idx: i })
@@ -463,12 +479,32 @@ impl PopupApp {
             return;
         }
 
-        if let Some(item) = self.selected_clip() {
-            if let Ok(mut out) = self.selected_item_out.lock() {
-                *out = Some(item.clone());
+        // Get the clip index first to avoid borrow conflicts
+        let clip_idx = self.filtered.get(self.selected).and_then(|item| {
+            if let DisplayItem::Clip { clip_idx } = item {
+                Some(*clip_idx)
+            } else {
+                None
+            }
+        });
+
+        if let Some(idx) = clip_idx {
+            // Increment use count for search priority
+            if let Some(clip) = self.clips.get_mut(idx) {
+                match clip {
+                    ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => {
+                        *use_count += 1;
+                    }
+                }
+                let item = clip.clone();
+                if let Ok(mut out) = self.selected_item_out.lock() {
+                    *out = Some(item);
+                }
             }
             self.should_paste.store(true, Ordering::Relaxed);
             self.close_popup(ctx);
+            // Persist the updated use_count
+            self.persist_all();
         } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
             if let Some(app) = self.apps.get(*app_idx) {
                 let exec = app.exec.clone();
@@ -1314,7 +1350,7 @@ impl PopupApp {
         row_height: f32,
     ) {
         match &item {
-            ClipItem::Text { content, timestamp } => {
+            ClipItem::Text { content, timestamp, .. } => {
                 ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         theme::draw_icon_badge(ui, "text", is_selected, self.theme_colors.as_ref());
@@ -2260,6 +2296,7 @@ mod tests {
         let text = ClipItem::Text {
             content: "Hello world".into(),
             timestamp: 1,
+            use_count: 0,
         };
         let img = ClipItem::Image {
             width: 640,
@@ -2267,6 +2304,7 @@ mod tests {
             timestamp: 2,
             filename: "shot.png".into(),
             data: None,
+            use_count: 0,
         };
         assert!(item_matches_query(&text, "hello"));
         assert!(item_matches_query(&img, "640x480"));

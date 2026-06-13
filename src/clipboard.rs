@@ -45,6 +45,7 @@ impl ClipboardMonitor {
                     let item = ClipItem::Text {
                         content: text.clone(),
                         timestamp: now_ts(),
+                        use_count: 0,
                     };
                     self.last_text = Some(text);
                     self.last_image_hash = None;
@@ -69,6 +70,7 @@ impl ClipboardMonitor {
                         timestamp: now_ts(),
                         filename: String::new(),
                         data: Some(img.bytes.into_owned()),
+                        use_count: 0,
                     };
                     self.last_image_hash = Some(hash);
                     self.last_text = None;

@@ -189,6 +189,7 @@ mod tests {
         ClipItem::Text {
             content: s.into(),
             timestamp: ts,
+            use_count: 0,
         }
     }
 
@@ -198,6 +199,7 @@ mod tests {
             height: 2,
             timestamp: ts,
             filename: filename.into(),
+            use_count: 0,
             data: None,
         }
     }

@@ -8,6 +8,7 @@ fn text_item(s: &str, ts: u64) -> ClipItem {
     ClipItem::Text {
         content: s.into(),
         timestamp: ts,
+        use_count: 0,
     }
 }
 
@@ -18,6 +19,7 @@ fn _image_item(filename: &str, ts: u64) -> ClipItem {
         timestamp: ts,
         filename: filename.into(),
         data: None,
+        use_count: 0,
     }
 }
 
