@@ -2,66 +2,30 @@
 
 Linux clipboard history manager. Daemon monitors the clipboard, popup lets you browse, search, and paste.
 
-## Prerequisites
+<p align="center">
+  <img src="assets/minimal.png" alt="clipit-rs popup showing clipboard history" width="360">
+</p>
 
-- **Rust** — latest stable (install via [rustup](https://rustup.rs)).
-- **X11** — runtime only; falls back to polling on Wayland.
-- **xdotool** — for auto-paste on X11.
+## Screenshots
 
-### System libraries (build time)
+<p>
+  <img src="assets/app_search.png" alt="App search mode in clipit-rs" width="330">
+  <img src="assets/right_click_image_preview.png" alt="Image preview in clipit-rs" width="250">
+</p>
 
-<details>
-<summary>Debian / Ubuntu</summary>
-
-```bash
-sudo apt install build-essential pkg-config \
-  libx11-dev libxcb1-dev libxkbcommon-dev \
-  libxrandr-dev libxi-dev libxcursor-dev libxext-dev \
-  libxss-dev libxtst-dev libxft-dev libxinerama-dev \
-  libwayland-dev libxkbcommon-x11-dev xdotool
-```
-</details>
-
-<details>
-<summary>Arch Linux</summary>
-
-```bash
-sudo pacman -S --needed base-devel pkgconf \
-  libx11 libxcb libxkbcommon libxrandr libxi libxcursor \
-  libxext libxss libxtst libxft libxinerama wayland libxkbcommon-x11 xdotool
-```
-</details>
-
-<details>
-<summary>Fedora</summary>
-
-```bash
-sudo dnf install gcc pkg-config \
-  libX11-devel libxcb-devel libxkbcommon-devel \
-  libXrandr-devel libXi-devel libXcursor-devel libXext-devel \
-  libXScrnSaver-devel libXtst-devel libXft-devel libXinerama-devel \
-  wayland-devel libxkbcommon-x11-devel xdotool
-```
-</details>
-
-## Build
-
-```bash
-git clone https://github.com/your-username/clipit-rs
-cd clipit-rs
-cargo build --release
-```
-
-Binary at `./target/release/clipit-rs`.
+<p>
+  <img src="assets/theme_selection.png" alt="Theme selection menu in clipit-rs" width="330">
+  <img src="assets/footer.png" alt="Footer controls in clipit-rs" width="330">
+</p>
 
 ## Usage
 
 ```bash
-clipit-rs              # start daemon
-clipit-rs --popup      # open popup
-clipit-rs --clear      # delete history + saved images
-clipit-rs -V           # version
-clipit-rs -h           # help
+clipit-rs          # start daemon
+clipit-rs --popup  # open popup
+clipit-rs --clear  # delete history and saved images
+clipit-rs -V       # version
+clipit-rs -h       # help
 ```
 
 Default hotkey: **Ctrl+Alt+V**.
@@ -71,7 +35,7 @@ Default hotkey: **Ctrl+Alt+V**.
 First run creates `~/.config/easycopy/easycopy.toml`.
 
 <details>
-<summary>Full config reference</summary>
+<summary>Default config</summary>
 
 ```toml
 [general]
@@ -84,13 +48,20 @@ popup_width = 640.0
 popup_height = 720.0
 preview_chars = 220
 paste_delay_ms = 120
-theme = "dark"            # dark | light | nord | catppuccin | dracula
+theme = "dark"
+hide_main_header = false
+hide_secondary_header = false
+hide_counts = false
 enable_theming = true
+enable_clipping = true
+close_on_focus_out = true
 keep_search_on_reopen = true
 debug_logging = false
-font_preset = "default"   # default | dejavu | liberation | fira | jetbrains | iosevka
-font_size = "medium"      # small | medium | large
-font_weight = "normal"    # normal | bold
+font_preset = "default"
+font_size = "medium"
+font_proportional_path = ""
+font_monospace_path = ""
+font_weight = "normal"
 
 [footer]
 enable = true
@@ -101,7 +72,14 @@ show_theme = true
 ```
 </details>
 
-The popup also has an in-app settings dropdown (palette icon in the footer) where themes, fonts, and font size can be changed and saved instantly.
+Supported values:
+
+- `theme`: `dark`, `light`, `nord`, `catppuccin`, `dracula`, `system`
+- `font_preset`: `default`, `dejavu`, `liberation`, `fira`, `jetbrains`, `iosevka`
+- `font_size`: `small`, `medium`, `large`
+- `font_weight`: `normal`, `bold`
+
+The popup also has an in-app settings dropdown where themes, fonts, and font size can be changed and saved instantly.
 
 ## i3 integration
 
@@ -148,3 +126,7 @@ systemctl --user enable --now clipit-rs
 - **Auto-paste** uses `xdotool` (X11 only). On strict Wayland, set `auto_paste = false`.
 - **X11 event source** — when running on X11, clipboard changes are detected via the XFixes extension (event-driven, no CPU polling). Falls back to timer polling on Wayland.
 - **Global hotkeys** depend on desktop environment permissions.
+
+## Build
+
+See [BUILD.md](BUILD.md) for source build instructions and distro dependencies.
