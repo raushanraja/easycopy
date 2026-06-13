@@ -90,7 +90,10 @@ Add to your i3 config:
 
 ```
 exec_always --no-startup-id /path/to/easycopy
-for_window [class="easycopy"] border none
+for_window [class="easycopy"] \
+    floating enable, \
+    border none, \
+    move position center
 ```
 
 The popup already sets `decorations(false)` and `always_on_top`, so with the `border none` rule it appears as a clean floating window.
