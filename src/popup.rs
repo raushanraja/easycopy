@@ -135,14 +135,14 @@ fn simulate_paste() {
         .status();
 }
 
-fn spawn_app_after_popup_hide(exec: String) {
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(60));
-        let _ = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(&exec)
-            .spawn();
-    });
+fn spawn_app_detached(exec: &str) {
+    let _ = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(exec)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn();
 }
 
 struct PopupApp {
@@ -382,13 +382,20 @@ impl PopupApp {
             .into_iter()
             .map(|(i, _)| DisplayItem::Clip { clip_idx: i });
 
-        let app_matches = self.apps.iter().enumerate().filter_map(|(i, _app)| {
-            if q.is_empty() || self.cached_app_search[i].contains(q.as_str()) {
-                Some(DisplayItem::App { app_idx: i })
-            } else {
-                None
-            }
+        let mut app_matches: Vec<(usize, &DesktopApp)> = self
+            .apps
+            .iter()
+            .enumerate()
+            .filter(|(i, _app)| q.is_empty() || self.cached_app_search[*i].contains(q.as_str()))
+            .collect();
+        app_matches.sort_by(|(a_idx, a), (b_idx, b)| {
+            b.use_count
+                .cmp(&a.use_count)
+                .then_with(|| self.apps[*a_idx].name.cmp(&self.apps[*b_idx].name))
         });
+        let app_matches = app_matches
+            .into_iter()
+            .map(|(i, _)| DisplayItem::App { app_idx: i });
         let filtered: Vec<DisplayItem> = clip_matches.chain(app_matches).collect();
         self.filtered = filtered;
         self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
@@ -506,12 +513,20 @@ impl PopupApp {
             // Persist the updated use_count
             self.persist_all();
         } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
-            if let Some(app) = self.apps.get(*app_idx) {
-                let exec = app.exec.clone();
-                self.close_popup(ctx);
-                spawn_app_after_popup_hide(exec);
-            }
+            self.launch_app(*app_idx, ctx);
         }
+    }
+
+    fn launch_app(&mut self, app_idx: usize, ctx: &egui::Context) {
+        let Some(app) = self.apps.get_mut(app_idx) else {
+            return;
+        };
+        app.use_count = app.use_count.saturating_add(1);
+        let app_for_record = app.clone();
+        let exec = app.exec.clone();
+        crate::desktop::record_app_launch(&app_for_record);
+        spawn_app_detached(&exec);
+        self.close_popup(ctx);
     }
 
     fn selected_clip(&self) -> Option<&ClipItem> {
@@ -623,7 +638,8 @@ impl PopupApp {
                     let spacing = ui.spacing().item_spacing.x;
                     let count_gap = if show_counts { spacing } else { 0.0 };
 
-                    let search_bar_width = (ui.available_width() - count_width - count_gap).max(100.0);
+                    let search_bar_width =
+                        (ui.available_width() - count_width - count_gap).max(100.0);
                     let search_content_width = (search_bar_width - 24.0).max(0.0);
 
                     let bg_fill = ui.visuals().extreme_bg_color;
@@ -779,11 +795,8 @@ impl PopupApp {
                         for row in 0..self.filtered.len() {
                             if self.draw_display_row(ui, row) {
                                 self.selected = row;
-                                // Only close popup if a clip was selected (apps keep popup open)
-                                if matches!(self.filtered[row], DisplayItem::Clip { .. }) {
-                                    self.select_and_close(ui.ctx());
-                                    break;
-                                }
+                                self.select_and_close(ui.ctx());
+                                break;
                             }
                         }
                     });
@@ -1350,7 +1363,9 @@ impl PopupApp {
         row_height: f32,
     ) {
         match &item {
-            ClipItem::Text { content, timestamp, .. } => {
+            ClipItem::Text {
+                content, timestamp, ..
+            } => {
                 ui.allocate_ui(egui::vec2(ui.available_width(), row_height - 20.0), |ui| {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         theme::draw_icon_badge(ui, "text", is_selected, self.theme_colors.as_ref());
@@ -2084,12 +2099,8 @@ impl eframe::App for PopupApp {
                     let _ = crate::opener::open_item(&t);
                 }
             } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
-                if let Some(app) = self.apps.get(*app_idx) {
-                    let exec = app.exec.clone();
-                    self.close_popup(ctx);
-                    spawn_app_after_popup_hide(exec);
-                    return;
-                }
+                self.launch_app(*app_idx, ctx);
+                return;
             }
         }
         if let Some(digit) = select_digit {
