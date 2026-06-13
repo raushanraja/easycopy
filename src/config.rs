@@ -37,6 +37,9 @@ fn default_hide_main_header() -> bool {
 fn default_hide_secondary_header() -> bool {
     false
 }
+fn default_hide_counts() -> bool {
+    false
+}
 fn default_enable_theming() -> bool {
     true
 }
@@ -100,6 +103,7 @@ pub struct GeneralConfig {
     pub theme: String,
     pub hide_main_header: bool,
     pub hide_secondary_header: bool,
+    pub hide_counts: bool,
     pub enable_theming: bool,
     pub enable_clipping: bool,
     pub close_on_focus_out: bool,
@@ -133,6 +137,7 @@ impl Default for GeneralConfig {
             theme: default_theme(),
             hide_main_header: default_hide_main_header(),
             hide_secondary_header: default_hide_secondary_header(),
+            hide_counts: default_hide_counts(),
             enable_theming: default_enable_theming(),
             enable_clipping: default_enable_clipping(),
             close_on_focus_out: default_close_on_focus_out(),
@@ -338,6 +343,7 @@ poll_interval_ms = 250
         assert_eq!(cfg.general.preview_chars, 220);
         assert_eq!(cfg.general.hide_main_header, false);
         assert_eq!(cfg.general.hide_secondary_header, false);
+        assert_eq!(cfg.general.hide_counts, false);
         assert_eq!(cfg.general.enable_theming, true);
         assert_eq!(cfg.general.enable_clipping, true);
         assert_eq!(cfg.general.close_on_focus_out, true);

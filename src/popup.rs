@@ -572,10 +572,23 @@ impl PopupApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let label_text =
-                        format!("{} clips · {} apps", self.clips.len(), self.apps.len());
-                    let label_width = 75.0;
-                    let search_width = (ui.available_width() - label_width - 8.0).max(100.0);
+                    let show_counts = !self.config.general.hide_counts;
+
+                    let count_width = if show_counts {
+                        let clips_digits = self.clips.len().to_string().chars().count();
+                        let apps_digits = self.apps.len().to_string().chars().count();
+                        let max_digits = clips_digits.max(apps_digits);
+                        let number_width = (max_digits as f32 * 7.5).ceil();
+                        number_width + 16.0
+                    } else {
+                        0.0
+                    };
+
+                    let spacing = ui.spacing().item_spacing.x;
+                    let count_gap = if show_counts { spacing } else { 0.0 };
+
+                    let search_bar_width = (ui.available_width() - count_width - count_gap).max(100.0);
+                    let search_content_width = (search_bar_width - 24.0).max(0.0);
 
                     let bg_fill = ui.visuals().extreme_bg_color;
                     let stroke = ui.visuals().widgets.noninteractive.bg_stroke;
@@ -586,7 +599,7 @@ impl PopupApp {
                         .rounding(10.0)
                         .inner_margin(egui::Margin::symmetric(12.0, 8.0))
                         .show(ui, |ui| {
-                            ui.set_width(search_width);
+                            ui.set_width(search_content_width);
                             ui.horizontal(|ui| {
                                 // Search icon
                                 let (icon_rect, _) = ui.allocate_exact_size(
@@ -601,14 +614,15 @@ impl PopupApp {
 
                                 ui.add_space(6.0);
 
-                                let available_width = if self.query.is_empty() {
-                                    ui.available_width()
+                                let text_edit_width = if self.query.is_empty() {
+                                    search_content_width - 22.0 - 2.0 * spacing
                                 } else {
-                                    (ui.available_width() - 32.0).max(100.0)
+                                    search_content_width - 40.0 - 3.0 * spacing
                                 };
+                                let text_edit_width = text_edit_width.max(100.0);
 
                                 let response = ui.add_sized(
-                                    [available_width, 22.0],
+                                    [text_edit_width, 22.0],
                                     egui::TextEdit::singleline(&mut self.query)
                                         .font(egui::TextStyle::Body)
                                         .frame(false)
@@ -653,13 +667,42 @@ impl PopupApp {
                             });
                         });
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(label_text)
-                                .size(13.0)
-                                .color(self.weak_color(ui)),
+                    if show_counts {
+                        let weak_color = self.weak_color(ui);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(count_width, 34.0),
+                            egui::Layout::top_down(egui::Align::LEFT),
+                            |ui| {
+                                ui.spacing_mut().item_spacing.y = -2.0;
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.label(
+                                        egui::RichText::new(format!("{}", self.clips.len()))
+                                            .size(12.0)
+                                            .color(weak_color),
+                                    );
+                                    let (icon_rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(12.0, 12.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    theme::paint_text_icon(ui, icon_rect, weak_color);
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.label(
+                                        egui::RichText::new(format!("{}", self.apps.len()))
+                                            .size(12.0)
+                                            .color(weak_color),
+                                    );
+                                    let (icon_rect, _) = ui.allocate_exact_size(
+                                        egui::vec2(12.0, 12.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    theme::paint_app_icon(ui, icon_rect, weak_color);
+                                });
+                            },
                         );
-                    });
+                    }
                 });
             });
     }
