@@ -2,21 +2,29 @@
 
 Linux clipboard history manager. Daemon monitors the clipboard, popup lets you browse, search, and paste.
 
+## Features
+
+- Text and image clipboard history
+- Keyboard-first popup with fast search
+- `/` prefix for app-only search
+- Frequent items are prioritized in search results
+- Themes, font presets, and compact layout options
+- X11 auto-paste support through `xdotool`
+
 <p align="center">
-  <img src="assets/minimal.png" alt="easycopy popup showing clipboard history" width="360">
+  <strong>Searched app</strong><br>
+  <img src="assets/minimal.png" alt="Searched app in easycopy popup" width="360">
 </p>
 
 ## Screenshots
 
-<p>
-  <img src="assets/app_search.png" alt="App search mode in easycopy" width="330">
-  <img src="assets/right_click_image_preview.png" alt="Image preview in easycopy" width="250">
-</p>
+| App search | Image preview |
+| --- | --- |
+| <img src="assets/app_search.png" alt="App search mode in easycopy" width="330"> | <img src="assets/right_click_image_preview.png" alt="Image preview in easycopy" width="250"> |
 
-<p>
-  <img src="assets/theme_selection.png" alt="Theme selection menu in easycopy" width="330">
-  <img src="assets/footer.png" alt="Footer controls in easycopy" width="330">
-</p>
+| Theme picker | Footer controls |
+| --- | --- |
+| <img src="assets/theme_selection.png" alt="Theme selection menu in easycopy" width="330"> | <img src="assets/footer.png" alt="Footer controls in easycopy" width="330"> |
 
 ## Usage
 
@@ -89,7 +97,7 @@ The popup also has an in-app settings dropdown where themes, fonts, and font siz
 Add to your i3 config:
 
 ```
-exec_always --no-startup-id /path/to/easycopy
+exec_always --no-startup-id easycopy
 for_window [class="easycopy"] \
     floating enable, \
     border none, \

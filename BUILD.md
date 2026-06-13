@@ -12,12 +12,16 @@ Build `easycopy` from source.
 ## Build Command
 
 ```bash
-git clone <repo-url>
-cd easycopy
 cargo build --release
 ```
 
 The binary is written to `./target/release/easycopy`.
+
+To install it into your user PATH:
+
+```bash
+cargo install --path .
+```
 
 ## Dependencies
 
