@@ -2180,6 +2180,9 @@ impl eframe::App for PopupApp {
                 if loaded_any {
                     ctx.request_repaint();
                 }
+                // Keep the event loop alive while hidden so we can detect
+                // show signals on show_rx. Poll every 50ms.
+                ctx.request_repaint_after(std::time::Duration::from_millis(50));
                 return; // skip rendering while hidden
             }
         }
