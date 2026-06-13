@@ -225,6 +225,7 @@ struct PopupApp {
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
     focused_once: bool,
+    reset_scroll_on_reopen: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
     clip_rx: std::sync::mpsc::Receiver<LoadedData>,
     clips_loaded: bool,
@@ -243,6 +244,8 @@ struct PopupApp {
     daemon_paste_tx: Option<mpsc::Sender<ClipItem>>,
     history_update_rx: Option<mpsc::Receiver<Vec<ClipItem>>>,
     hide_command_sent: bool,
+    pending_reveal: bool,
+    reveal_warmup_frames: u8,
 }
 
 impl PopupApp {
@@ -386,6 +389,7 @@ impl PopupApp {
             lightbox_zoom: 1.0,
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
+            reset_scroll_on_reopen: false,
             rx,
             clip_rx,
             clips_loaded: false,
@@ -403,6 +407,8 @@ impl PopupApp {
             daemon_paste_tx: None,
             history_update_rx: None,
             hide_command_sent: false,
+            pending_reveal: false,
+            reveal_warmup_frames: 0,
         }
     }
 
@@ -538,6 +544,7 @@ impl PopupApp {
             lightbox_zoom: 1.0,
             lightbox_pan: egui::Vec2::ZERO,
             focused_once: false,
+            reset_scroll_on_reopen: false,
             rx,
             clip_rx,
             clips_loaded: false,
@@ -555,6 +562,8 @@ impl PopupApp {
             daemon_paste_tx: Some(daemon_paste_tx),
             history_update_rx: Some(history_update_rx),
             hide_command_sent: false,
+            pending_reveal: false,
+            reveal_warmup_frames: 0,
         }
     }
 
@@ -566,6 +575,8 @@ impl PopupApp {
 
     fn hide_daemon_popup(&mut self, ctx: &egui::Context) {
         self.visible.store(false, Ordering::Relaxed);
+        self.pending_reveal = false;
+        self.reveal_warmup_frames = 0;
         if !self.hide_command_sent {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             self.hide_command_sent = true;
@@ -690,6 +701,15 @@ impl PopupApp {
     }
 
     fn select_and_close(&mut self, ctx: &egui::Context) {
+        if self.query.trim() == "/q" {
+            if self.daemon_mode {
+                self.hide_daemon_popup(ctx);
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            return;
+        }
+
         if let Some(item) = self.selected_clip() {
             if self.daemon_mode {
                 // Daemon mode: send item via channel and hide window
@@ -859,7 +879,7 @@ impl PopupApp {
                                         .hint_text(SEARCH_HINT),
                                 );
 
-                                if self.focus_search_once {
+                                if self.focus_search_once && !self.pending_reveal {
                                     response.request_focus();
                                     self.focus_search_once = false;
                                 }
@@ -935,23 +955,27 @@ impl PopupApp {
                     return;
                 }
 
-                egui::ScrollArea::vertical()
+                let mut scroll_area = egui::ScrollArea::vertical()
                     .id_source("clipit_clip_list")
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.spacing_mut().item_spacing.y = 8.0;
-                        ui.set_width(ui.available_width());
-                        for row in 0..self.filtered.len() {
-                            if self.draw_display_row(ui, row) {
-                                self.selected = row;
-                                // Only close popup if a clip was selected (apps keep popup open)
-                                if matches!(self.filtered[row], DisplayItem::Clip { .. }) {
-                                    self.select_and_close(ui.ctx());
-                                    break;
-                                }
+                    .auto_shrink([false, false]);
+                if self.reset_scroll_on_reopen {
+                    scroll_area = scroll_area.vertical_scroll_offset(0.0);
+                }
+                scroll_area.show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 8.0;
+                    ui.set_width(ui.available_width());
+                    for row in 0..self.filtered.len() {
+                        if self.draw_display_row(ui, row) {
+                            self.selected = row;
+                            // Only close popup if a clip was selected (apps keep popup open)
+                            if matches!(self.filtered[row], DisplayItem::Clip { .. }) {
+                                self.select_and_close(ui.ctx());
+                                break;
                             }
                         }
-                    });
+                    }
+                });
+                self.reset_scroll_on_reopen = false;
             });
     }
 
@@ -1599,7 +1623,7 @@ impl PopupApp {
                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         if let Some(tex) = self.textures.get(filename) {
                             let img = egui::Image::new(tex)
-                                .max_size(egui::vec2(36.0, 36.0))
+                                .fit_to_exact_size(egui::vec2(36.0, 36.0))
                                 .rounding(egui::Rounding::same(6.0));
                             ui.add(img);
                         } else {
@@ -1749,7 +1773,7 @@ impl PopupApp {
                         if let Some(tex) = self.app_icon_textures.get(icon_path) {
                             ui.add(
                                 egui::Image::new(tex)
-                                    .max_size(egui::vec2(36.0, 36.0))
+                                    .fit_to_exact_size(egui::vec2(36.0, 36.0))
                                     .rounding(egui::Rounding::same(6.0)),
                             );
                         } else if let Ok(img) = image::open(icon_path) {
@@ -1767,7 +1791,7 @@ impl PopupApp {
                                 .insert(icon_path.clone(), tex.clone());
                             ui.add(
                                 egui::Image::new(&tex)
-                                    .max_size(egui::vec2(36.0, 36.0))
+                                    .fit_to_exact_size(egui::vec2(36.0, 36.0))
                                     .rounding(egui::Rounding::same(6.0)),
                             );
                         } else {
@@ -2182,11 +2206,15 @@ impl eframe::App for PopupApp {
                 self.focused_once = false;
                 self.focus_search_once = true;
                 self.hide_command_sent = false;
+                self.pending_reveal = true;
+                self.reveal_warmup_frames = 1;
                 if !self.config.general.keep_search_on_reopen && !self.query.is_empty() {
                     self.query.clear();
                     self.apply_filter();
                 }
-                reveal_after_render = true;
+                self.selected = 0;
+                self.scroll_to_selected_once = false;
+                self.reset_scroll_on_reopen = true;
                 ctx.request_repaint();
             }
 
@@ -2439,8 +2467,19 @@ impl eframe::App for PopupApp {
                 self.draw_lightbox(ui);
             });
 
+        if self.pending_reveal {
+            if self.reveal_warmup_frames > 0 {
+                self.reveal_warmup_frames -= 1;
+                ctx.request_repaint();
+            } else {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                self.pending_reveal = false;
+                reveal_after_render = true;
+            }
+        }
+
         if reveal_after_render {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.request_repaint();
         }
     }
 }
@@ -2626,6 +2665,7 @@ mod tests {
     fn slash_prefix_switches_to_app_only_search() {
         assert_eq!(filter_query("/firefox"), (true, "firefox".into()));
         assert_eq!(filter_query(" / terminal "), (true, "terminal".into()));
+        assert_eq!(filter_query("/q"), (true, "q".into()));
     }
 
     #[test]
