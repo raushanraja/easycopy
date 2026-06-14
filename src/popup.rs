@@ -634,22 +634,39 @@ impl PopupApp {
     }
 
     fn delete_current(&mut self) {
-        let Some(DisplayItem::Clip { clip_idx }) = self.filtered.get(self.selected) else {
-            return; // apps can't be deleted
-        };
-        let orig_idx = *clip_idx;
+        match self.filtered.get(self.selected) {
+            Some(DisplayItem::Clip { clip_idx }) => {
+                let orig_idx = *clip_idx;
 
-        if let Some(ClipItem::Image { filename, .. }) = self.clips.get(orig_idx) {
-            if !filename.is_empty() {
-                storage::delete_image_file(filename);
-                self.textures.remove(filename);
+                if let Some(ClipItem::Image { filename, .. }) = self.clips.get(orig_idx) {
+                    if !filename.is_empty() {
+                        storage::delete_image_file(filename);
+                        self.textures.remove(filename);
+                    }
+                }
+
+                self.clips.remove(orig_idx);
+                self.persist_all();
+                self.rebuild_caches();
+                self.apply_filter();
+            }
+            Some(DisplayItem::BrowserAction { action_idx }) => {
+                self.browser_actions.remove(*action_idx);
+                self.cached_browser_action_search = self
+                    .browser_actions
+                    .iter()
+                    .map(|a| {
+                        format!("{} {} {}", a.query, a.url, a.description)
+                            .to_lowercase()
+                    })
+                    .collect();
+                self.persist_browser_actions();
+                self.apply_filter();
+            }
+            Some(DisplayItem::App { .. }) | None => {
+                // apps can't be deleted
             }
         }
-
-        self.clips.remove(orig_idx);
-        self.persist_all();
-        self.rebuild_caches();
-        self.apply_filter();
     }
 
     fn clear_history(&mut self) {
