@@ -1,10 +1,10 @@
+use crate::browser_action::{self, BrowserAction, QueryMode};
 use crate::config::Config;
 use crate::desktop::DesktopApp;
 use crate::history::ClipItem;
 use crate::storage;
-use crate::storage::BrowserAction;
 use crate::theme::{self, ThemeColors};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -155,6 +155,7 @@ struct PopupApp {
     selected: usize,
     textures: HashMap<String, egui::TextureHandle>,
     app_icon_textures: HashMap<String, egui::TextureHandle>,
+    icon_loading: HashSet<String>,
     should_paste: Arc<AtomicBool>,
     selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
     preview_chars: usize,
@@ -165,6 +166,8 @@ struct PopupApp {
     preview_image: Option<(String, egui::TextureHandle)>,
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
+    lightbox_loading: Option<String>,
+    last_popup_save: Option<std::time::Instant>,
     focused_once: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
     clip_rx: std::sync::mpsc::Receiver<LoadedData>,
@@ -179,6 +182,10 @@ struct PopupApp {
     browser_preview: Option<String>,
     browser_actions: Vec<BrowserAction>,
     cached_browser_action_search: Vec<String>,
+    icon_req_tx: std::sync::mpsc::Sender<String>,
+    icon_res_rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
+    lightbox_req_tx: std::sync::mpsc::Sender<String>,
+    lightbox_res_rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
 }
 
 impl PopupApp {
@@ -303,11 +310,42 @@ impl PopupApp {
 
         let theme_colors = ThemeColors::from_config(&config);
 
-        let browser_actions = crate::storage::load_browser_actions();
+        let browser_actions = browser_action::load();
         let cached_browser_action_search: Vec<String> = browser_actions
             .iter()
             .map(|a| format!("{} {} {}", a.query, a.url, a.description).to_lowercase())
             .collect();
+
+        // ── Async app icon loading ──
+        // Main thread sends icon_path requests; background thread loads and sends back ColorImage.
+        let (icon_req_tx, icon_req_rx) = std::sync::mpsc::channel();
+        let (icon_res_tx, icon_res_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while let Ok(icon_path) = icon_req_rx.recv() {
+                if let Ok(img) = image::open(&icon_path) {
+                    let rgba = img.to_rgba8();
+                    let size = [rgba.width() as usize, rgba.height() as usize];
+                    let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                    let _ = icon_res_tx.send((icon_path, ci));
+                }
+            }
+        });
+
+        // ── Async lightbox image loading ──
+        let (lightbox_req_tx, lightbox_req_rx) = std::sync::mpsc::channel();
+        let (lightbox_res_tx, lightbox_res_rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            while let Ok(filename) = lightbox_req_rx.recv() {
+                let path = Config::images_dir().join(&filename);
+                if let Ok(img) = image::open(path) {
+                    let large = img.resize(500, 500, image::imageops::FilterType::Triangle);
+                    let rgba = large.to_rgba8();
+                    let size = [rgba.width() as usize, rgba.height() as usize];
+                    let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                    let _ = lightbox_res_tx.send((filename, ci));
+                }
+            }
+        });
 
         Self {
             clips: Vec::new(),
@@ -317,6 +355,7 @@ impl PopupApp {
             selected: 0,
             textures: HashMap::new(),
             app_icon_textures: HashMap::new(),
+            icon_loading: HashSet::new(),
             should_paste,
             selected_item_out,
             preview_chars: config.general.preview_chars,
@@ -327,6 +366,8 @@ impl PopupApp {
             preview_image: None,
             lightbox_zoom: 1.0,
             lightbox_pan: egui::Vec2::ZERO,
+            lightbox_loading: None,
+            last_popup_save: None,
             focused_once: false,
             rx,
             clip_rx,
@@ -341,6 +382,10 @@ impl PopupApp {
             browser_preview: None,
             browser_actions,
             cached_browser_action_search,
+            icon_req_tx,
+            icon_res_rx,
+            lightbox_req_tx,
+            lightbox_res_rx,
         }
     }
 
@@ -354,48 +399,21 @@ impl PopupApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
-    fn load_large_image(&self, ctx: &egui::Context, filename: &str) -> Option<egui::TextureHandle> {
-        let path = Config::images_dir().join(filename);
-        if let Ok(img) = image::open(path) {
-            let large = img.resize(500, 500, image::imageops::FilterType::Triangle);
-            let rgba = large.to_rgba8();
-            let size = [rgba.width() as usize, rgba.height() as usize];
-            let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
-            Some(ctx.load_texture(
-                format!("large_{}", filename),
-                ci,
-                egui::TextureOptions::LINEAR,
-            ))
-        } else {
-            None
-        }
-    }
-
     fn apply_filter(&mut self) {
-        let (mode, q) = filter_query(&self.query);
+        let (mode, q) = browser_action::filter_query(&self.query);
         if mode == QueryMode::Browser {
-            let mut matches: Vec<(usize, &BrowserAction)> = self
-                .browser_actions
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| {
-                    q.is_empty()
-                        || self.cached_browser_action_search[*i]
-                            .contains(&q.to_lowercase())
-                })
-                .collect();
-            if matches.is_empty() {
-                self.browser_preview = describe_browser_action(&self.query);
+            let match_indices = browser_action::search(&self.browser_actions, &self.query);
+            if match_indices.is_empty() {
+                self.browser_preview = browser_action::resolve(&self.query).map(|a| a.description);
                 self.filtered.clear();
                 self.selected = 0;
                 self.scroll_to_selected_once = true;
                 return;
             }
             self.browser_preview = None;
-            matches.sort_by(|(_, a), (_, b)| b.use_count.cmp(&a.use_count));
-            self.filtered = matches
+            self.filtered = match_indices
                 .into_iter()
-                .map(|(i, _)| DisplayItem::BrowserAction { action_idx: i })
+                .map(|i| DisplayItem::BrowserAction { action_idx: i })
                 .collect();
             self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
             self.scroll_to_selected_once = true;
@@ -530,53 +548,37 @@ impl PopupApp {
             return;
         }
 
-        let (mode, _) = filter_query(&self.query);
+        let (mode, _) = browser_action::filter_query(&self.query);
         if mode == QueryMode::Browser {
             if let Some(DisplayItem::BrowserAction { action_idx }) =
                 self.filtered.get(self.selected)
             {
-                let url = self.browser_actions[*action_idx].url.clone();
-                if let Some(existing) = self.browser_actions.get_mut(*action_idx) {
-                    existing.use_count += 1;
-                }
-                let _ = crate::opener::open_url(&url);
-                self.persist_browser_actions();
+                self.browser_actions[*action_idx].use_count += 1;
+                let _ = browser_action::open_url(&self.browser_actions[*action_idx].url);
+                self.force_persist_browser_actions();
                 self.close_popup(ctx);
                 return;
             }
 
             if self.filtered.is_empty() {
-                let url = resolve_browser_url(&self.query);
-                let _ = crate::opener::open_url(&url);
-
-                let text = self.query.trim_start_matches(':').trim();
-                let desc = if url.contains("google.com/search?q=") {
-                    format!("Search Google for {}", text)
-                } else {
-                    format!("Open {}", url)
-                };
-
-                if let Some(existing) =
-                    self.browser_actions.iter_mut().find(|a| a.query == text)
-                {
-                    existing.use_count += 1;
-                } else {
-                    self.browser_actions.push(BrowserAction {
-                        query: text.to_string(),
-                        url: url.clone(),
-                        description: desc,
-                        use_count: 1,
-                    });
+                if let Some(resolved) = browser_action::resolve(&self.query) {
+                    let _ = browser_action::open_url(&resolved.url);
+                    let query_text = resolved.query;
+                    if let Some(existing) =
+                        self.browser_actions.iter_mut().find(|a| a.query == query_text)
+                    {
+                        existing.use_count += 1;
+                    } else {
+                        self.browser_actions.push(BrowserAction {
+                            query: query_text,
+                            url: resolved.url,
+                            description: resolved.description,
+                            use_count: 1,
+                        });
+                    }
+                    self.rebuild_browser_action_cache();
+                    self.force_persist_browser_actions();
                 }
-                self.cached_browser_action_search = self
-                    .browser_actions
-                    .iter()
-                    .map(|a| {
-                        format!("{} {} {}", a.query, a.url, a.description)
-                            .to_lowercase()
-                    })
-                    .collect();
-                self.persist_browser_actions();
                 self.close_popup(ctx);
                 return;
             }
@@ -607,7 +609,7 @@ impl PopupApp {
             self.should_paste.store(true, Ordering::Relaxed);
             self.close_popup(ctx);
             // Persist the updated use_count
-            self.persist_all();
+            self.force_persist_all();
         } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
             self.launch_app(*app_idx, ctx);
         }
@@ -652,14 +654,7 @@ impl PopupApp {
             }
             Some(DisplayItem::BrowserAction { action_idx }) => {
                 self.browser_actions.remove(*action_idx);
-                self.cached_browser_action_search = self
-                    .browser_actions
-                    .iter()
-                    .map(|a| {
-                        format!("{} {} {}", a.query, a.url, a.description)
-                            .to_lowercase()
-                    })
-                    .collect();
+                self.rebuild_browser_action_cache();
                 self.persist_browser_actions();
                 self.apply_filter();
             }
@@ -679,7 +674,7 @@ impl PopupApp {
         }
         self.clips.clear();
         self.query.clear();
-        self.persist_all();
+        self.force_persist_all();
         self.textures.clear();
         self.cached_clip_char_counts.clear();
         self.cached_clip_previews.clear();
@@ -688,13 +683,51 @@ impl PopupApp {
         self.apply_filter();
     }
 
-    fn persist_browser_actions(&self) {
-        let _ = crate::storage::save_browser_actions(&self.browser_actions);
+    fn persist_browser_actions(&mut self) {
+        const POPUP_SAVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+        let now = std::time::Instant::now();
+        if self.last_popup_save
+            .map(|t| now.duration_since(t) < POPUP_SAVE_INTERVAL)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        let _ = browser_action::save(&self.browser_actions);
+        self.last_popup_save = Some(now);
     }
 
-    fn persist_all(&self) {
+    fn persist_all(&mut self) {
+        const POPUP_SAVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+        let now = std::time::Instant::now();
+        if self.last_popup_save
+            .map(|t| now.duration_since(t) < POPUP_SAVE_INTERVAL)
+            .unwrap_or(false)
+        {
+            return;
+        }
         let items: VecDeque<ClipItem> = self.clips.iter().cloned().collect();
         let _ = storage::save_history(&items);
+        self.last_popup_save = Some(now);
+    }
+
+    fn force_persist_browser_actions(&self) {
+        let _ = browser_action::save(&self.browser_actions);
+    }
+
+    fn force_persist_all(&self) {
+        let items: VecDeque<ClipItem> = self.clips.iter().cloned().collect();
+        let _ = storage::save_history(&items);
+    }
+
+    fn rebuild_browser_action_cache(&mut self) {
+        self.cached_browser_action_search = self
+            .browser_actions
+            .iter()
+            .map(|a| {
+                format!("{} {} {}", a.query, a.url, a.description)
+                    .to_lowercase()
+            })
+            .collect();
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
@@ -1412,11 +1445,9 @@ impl PopupApp {
         if response.secondary_clicked() {
             if let ClipItem::Image { filename, .. } = &item {
                 if !filename.is_empty() {
-                    if let Some(tex) = self.load_large_image(ui.ctx(), filename) {
-                        self.lightbox_zoom = 1.0;
-                        self.lightbox_pan = egui::Vec2::ZERO;
-                        self.preview_image = Some((filename.clone(), tex));
-                    }
+                    self.lightbox_loading = Some(filename.clone());
+                    self.preview_image = None;
+                    let _ = self.lightbox_req_tx.send(filename.clone());
                 }
             }
         }
@@ -1655,7 +1686,7 @@ impl PopupApp {
         &mut self,
         ui: &mut egui::Ui,
         row: usize,
-        app_idx: usize,
+        _app_idx: usize,
         app: DesktopApp,
     ) -> bool {
         let is_selected = row == self.selected;
@@ -1733,25 +1764,16 @@ impl PopupApp {
                                     .fit_to_exact_size(egui::vec2(36.0, 36.0))
                                     .rounding(egui::Rounding::same(6.0)),
                             );
-                        } else if let Ok(img) = image::open(icon_path) {
-                            let rgba = img.to_rgba8();
-                            let ci = egui::ColorImage::from_rgba_unmultiplied(
-                                [rgba.width() as usize, rgba.height() as usize],
-                                rgba.as_raw(),
-                            );
-                            let tex = ui.ctx().load_texture(
-                                format!("app_{}", app_idx),
-                                ci,
-                                egui::TextureOptions::LINEAR,
-                            );
-                            self.app_icon_textures
-                                .insert(icon_path.clone(), tex.clone());
-                            ui.add(
-                                egui::Image::new(&tex)
-                                    .fit_to_exact_size(egui::vec2(36.0, 36.0))
-                                    .rounding(egui::Rounding::same(6.0)),
+                        } else if self.icon_loading.contains(icon_path.as_str()) {
+                            theme::draw_icon_badge(
+                                ui,
+                                "application",
+                                is_selected,
+                                self.theme_colors.as_ref(),
                             );
                         } else {
+                            self.icon_loading.insert(icon_path.clone());
+                            let _ = self.icon_req_tx.send(icon_path.clone());
                             theme::draw_icon_badge(
                                 ui,
                                 "application",
@@ -1902,6 +1924,29 @@ impl PopupApp {
     }
 
     fn draw_lightbox(&mut self, ui: &mut egui::Ui) {
+        // Show loading state while the large image is being prepared
+        if let Some(ref loading_name) = self.lightbox_loading {
+            let screen_rect = ui.ctx().screen_rect();
+            let bg_color = self.theme_colors.as_ref().map_or(
+                egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
+                |t| t.lightbox_overlay,
+            );
+            ui.painter()
+                .rect_filled(screen_rect, egui::Rounding::same(0.0), bg_color);
+            ui.vertical_centered(|ui| {
+                ui.add_space(screen_rect.height() / 2.0 - 40.0);
+                ui.label(
+                    egui::RichText::new(format!("Loading {}…", loading_name))
+                        .size(15.0)
+                        .color(self.theme_colors.as_ref().map_or(
+                            egui::Color32::from_rgb(200, 200, 200),
+                            |t| t.weak_text_color,
+                        )),
+                );
+            });
+            return;
+        }
+
         let Some((ref filename, ref texture)) = self.preview_image else {
             return;
         };
@@ -2200,6 +2245,7 @@ impl PopupApp {
 
         if close_preview {
             self.preview_image = None;
+            self.lightbox_loading = None;
         }
     }
 }
@@ -2207,11 +2253,41 @@ impl PopupApp {
 impl eframe::App for PopupApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let mut loaded_any = false;
+
+        // ── Async thumbnail loading ──
         while let Ok((filename, ci)) = self.rx.try_recv() {
             let tex = ctx.load_texture(&filename, ci, egui::TextureOptions::LINEAR);
             self.textures.insert(filename, tex);
             loaded_any = true;
         }
+
+        // ── Async app icon loading ──
+        while let Ok((icon_path, ci)) = self.icon_res_rx.try_recv() {
+            let tex = ctx.load_texture(
+                format!("icon_{}", icon_path),
+                ci,
+                egui::TextureOptions::LINEAR,
+            );
+            self.app_icon_textures.insert(icon_path.clone(), tex);
+            self.icon_loading.remove(&icon_path);
+            loaded_any = true;
+        }
+
+        // ── Async lightbox image loading ──
+        while let Ok((filename, ci)) = self.lightbox_res_rx.try_recv() {
+            // Only show the image if the user hasn't closed/requested a different one
+            if self.lightbox_loading.as_ref() == Some(&filename) {
+                let tex = ctx.load_texture(
+                    format!("large_{}", filename),
+                    ci,
+                    egui::TextureOptions::LINEAR,
+                );
+                self.preview_image = Some((filename, tex));
+                loaded_any = true;
+            }
+            self.lightbox_loading = None;
+        }
+
         if loaded_any {
             ctx.request_repaint();
         }
@@ -2297,8 +2373,9 @@ impl eframe::App for PopupApp {
         });
 
         if close {
-            if self.preview_image.is_some() {
+            if self.preview_image.is_some() || self.lightbox_loading.is_some() {
                 self.preview_image = None;
+                self.lightbox_loading = None;
             } else {
                 self.close_popup(ctx);
             }
@@ -2380,6 +2457,15 @@ impl eframe::App for PopupApp {
                 });
                 self.draw_lightbox(ui);
             });
+
+        // ── Reduce idle CPU: sleep when nothing is loading and UI is static ──
+        if self.clips_loaded
+            && self.apps_loaded
+            && self.lightbox_loading.is_none()
+            && !loaded_any
+        {
+            ctx.request_repaint_after(std::time::Duration::from_secs(60));
+        }
     }
 }
 
@@ -2413,122 +2499,6 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
             .to_lowercase()
             .contains(q),
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum QueryMode {
-    Normal,
-    AppsOnly,
-    Browser,
-}
-
-fn filter_query(query: &str) -> (QueryMode, String) {
-    let trimmed = query.trim();
-    if let Some(app_query) = trimmed.strip_prefix('/') {
-        (QueryMode::AppsOnly, app_query.trim().to_lowercase())
-    } else if let Some(browser_query) = trimmed.strip_prefix(':') {
-        (QueryMode::Browser, browser_query.trim().to_string())
-    } else {
-        (QueryMode::Normal, trimmed.to_lowercase())
-    }
-}
-
-fn describe_browser_action(query: &str) -> Option<String> {
-    let trimmed = query.trim();
-    let text = trimmed.strip_prefix(':').unwrap_or(trimmed).trim();
-    if text.is_empty() {
-        return None;
-    }
-
-    let shortcuts: &[(&str, &str)] = &[
-        ("google", "https://www.google.com"),
-        ("gmail", "https://mail.google.com"),
-        ("x", "https://x.com"),
-        ("twitter", "https://x.com"),
-        ("twitch", "https://www.twitch.tv"),
-        ("alibaba", "https://www.alibaba.com"),
-        ("amazon", "https://www.amazon.in"),
-        ("github", "https://github.com"),
-        ("youtube", "https://www.youtube.com"),
-        ("reddit", "https://www.reddit.com"),
-    ];
-    for (key, url) in shortcuts {
-        if text.eq_ignore_ascii_case(key) {
-            return Some(format!("Open {}", url));
-        }
-    }
-
-    if text.chars().all(|c| c.is_ascii_digit()) {
-        return Some(format!("Open http://localhost:{}", text));
-    }
-
-    if text.contains('.') && !text.contains(' ') {
-        let url = if text.starts_with("http://") || text.starts_with("https://") {
-            text.to_string()
-        } else {
-            format!("https://{}", text)
-        };
-        return Some(format!("Open {}", url));
-    }
-
-    Some(format!("Search Google for {}", text))
-}
-
-fn resolve_browser_url(query: &str) -> String {
-    let trimmed = query.trim();
-    let text = trimmed.strip_prefix(':').unwrap_or(trimmed).trim();
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let shortcuts: &[(&str, &str)] = &[
-        ("google", "https://www.google.com"),
-        ("gmail", "https://mail.google.com"),
-        ("x", "https://x.com"),
-        ("twitter", "https://x.com"),
-        ("twitch", "https://www.twitch.tv"),
-        ("alibaba", "https://www.alibaba.com"),
-        ("amazon", "https://www.amazon.in"),
-        ("github", "https://github.com"),
-        ("youtube", "https://www.youtube.com"),
-        ("reddit", "https://www.reddit.com"),
-    ];
-    for (key, url) in shortcuts {
-        if text.eq_ignore_ascii_case(key) {
-            return url.to_string();
-        }
-    }
-
-    if text.chars().all(|c| c.is_ascii_digit()) {
-        return format!("http://localhost:{}", text);
-    }
-
-    if text.contains('.') && !text.contains(' ') {
-        if text.starts_with("http://") || text.starts_with("https://") {
-            return text.to_string();
-        }
-        return format!("https://{}", text);
-    }
-
-    let encoded = percent_encode(text);
-    format!("https://www.google.com/search?q={}", encoded)
-}
-
-fn percent_encode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() * 3);
-    for b in s.bytes() {
-        match b {
-            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b'.' | b'~' => {
-                out.push(b as char);
-            }
-            b' ' => out.push('+'),
-            _ => {
-                out.push('%');
-                out.push_str(&format!("{:02X}", b));
-            }
-        }
-    }
-    out
 }
 
 fn preview_text(text: &str, max_chars: usize) -> String {
@@ -2671,21 +2641,21 @@ mod tests {
 
     #[test]
     fn slash_prefix_switches_to_app_only_search() {
-        assert_eq!(filter_query("/firefox"), (QueryMode::AppsOnly, "firefox".into()));
-        assert_eq!(filter_query(" / terminal "), (QueryMode::AppsOnly, "terminal".into()));
-        assert_eq!(filter_query("/q"), (QueryMode::AppsOnly, "q".into()));
+        assert_eq!(browser_action::filter_query("/firefox"), (browser_action::QueryMode::AppsOnly, "firefox".into()));
+        assert_eq!(browser_action::filter_query(" / terminal "), (browser_action::QueryMode::AppsOnly, "terminal".into()));
+        assert_eq!(browser_action::filter_query("/q"), (browser_action::QueryMode::AppsOnly, "q".into()));
     }
 
     #[test]
     fn colon_prefix_switches_to_browser_mode() {
-        assert_eq!(filter_query(":google"), (QueryMode::Browser, "google".into()));
-        assert_eq!(filter_query(" : hello "), (QueryMode::Browser, "hello".into()));
+        assert_eq!(browser_action::filter_query(":google"), (browser_action::QueryMode::Browser, "google".into()));
+        assert_eq!(browser_action::filter_query(" : hello "), (browser_action::QueryMode::Browser, "hello".into()));
     }
 
     #[test]
     fn normal_search_includes_clipboard_items() {
-        assert_eq!(filter_query("hello"), (QueryMode::Normal, "hello".into()));
-        assert_eq!(filter_query("  "), (QueryMode::Normal, "".into()));
+        assert_eq!(browser_action::filter_query("hello"), (browser_action::QueryMode::Normal, "hello".into()));
+        assert_eq!(browser_action::filter_query("  "), (browser_action::QueryMode::Normal, "".into()));
     }
 
     #[test]

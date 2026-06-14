@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const HISTORY_SAVE_INTERVAL: Duration = Duration::from_secs(1);
 
 use easycopy::clipboard::ClipboardMonitor;
 use easycopy::config::Config;
@@ -198,6 +200,7 @@ fn run_daemon() {
     let tick_ms = 50;
     let ticks_per_poll = (poll_interval / tick_ms).max(1);
     let mut tick_count = 0u64;
+    let mut last_history_save: Option<Instant> = None;
 
     loop {
         // ── IPC paste requests from popup ────────────────────────
@@ -245,7 +248,7 @@ fn run_daemon() {
                         if theme::is_debug_logging() {
                             eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
-                        let _ = process_clip_item(raw, &mut history);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save);
                     } else if theme::is_debug_logging() {
                         eprintln!("[daemon] monitor.poll() returned None (no change)");
                     }
@@ -258,7 +261,7 @@ fn run_daemon() {
                 tick_count = 0;
                 if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
-                        let _ = process_clip_item(raw, &mut history);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save);
                     }
                 }
             }
@@ -296,7 +299,11 @@ fn run_daemon() {
 
 /// Process a clip item detected by the monitor — saves images, adds to history.
 /// Returns the processed item if it was added to history, None otherwise.
-fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<ClipItem> {
+fn process_clip_item(
+    raw: ClipItem,
+    history: &mut HistoryManager,
+    last_save: &mut Option<Instant>,
+) -> Option<ClipItem> {
     let item = match raw {
         ClipItem::Image {
             data: Some(bytes),
@@ -322,8 +329,15 @@ fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<Clip
     };
 
     if history.add(item.clone()) {
-        if let Err(e) = storage::save_history(history.items()) {
-            eprintln!("[daemon] failed to save history: {e}");
+        let now = Instant::now();
+        if last_save
+            .map(|t| now.duration_since(t) > HISTORY_SAVE_INTERVAL)
+            .unwrap_or(true)
+        {
+            if let Err(e) = storage::save_history(history.items()) {
+                eprintln!("[daemon] failed to save history: {e}");
+            }
+            *last_save = Some(now);
         }
         Some(item)
     } else {
