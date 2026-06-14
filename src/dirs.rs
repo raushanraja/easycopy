@@ -7,7 +7,7 @@ use std::path::PathBuf;
 // Owns XDG filesystem path discovery. Extracted from Config so that
 // modules can resolve paths without depending on the settings type.
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Directories {
     pub config_dir: PathBuf,
     pub data_dir: PathBuf,

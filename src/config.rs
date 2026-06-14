@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 fn default_max_text_items() -> usize {
     200
@@ -194,56 +193,15 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn load() -> Self {
-        let dirs = crate::dirs::Directories::discover();
-        let path = dirs.config_path;
-        if path.exists() {
-            match Self::load_from_path(&path) {
-                Ok(cfg) => cfg,
-                Err(e) => {
-                    let mut cfg = Self::default();
-                    cfg.parse_error = Some(format!("Failed to read config file: {}", e));
-                    cfg
-                }
-            }
-        } else {
-            let cfg = Self::default();
-            let _ = cfg.save();
-            cfg
-        }
+    /// Load config from the path derived from `dirs`.
+    /// Directories is discovered once by the caller.
+    pub fn load(dirs: crate::dirs::Directories) -> Self {
+        crate::store::config::load(dirs)
     }
 
-    pub fn load_from_path(path: &Path) -> std::io::Result<Self> {
-        let text = std::fs::read_to_string(path)?;
-        match toml::from_str::<Self>(&text) {
-            Ok(mut cfg) => {
-                cfg.sanitize();
-                Ok(cfg)
-            }
-            Err(e) => {
-                let err_msg = e.to_string();
-                eprintln!(
-                    "Warning: Failed to parse config file: {}. Using default settings.",
-                    err_msg
-                );
-                let mut cfg = Self::default();
-                cfg.parse_error = Some(err_msg);
-                Ok(cfg)
-            }
-        }
-    }
-
-    pub fn save(&self) -> std::io::Result<()> {
-        let dirs = crate::dirs::Directories::discover();
-        self.save_to_path(&dirs.config_path)
-    }
-
-    pub fn save_to_path(&self, path: &Path) -> std::io::Result<()> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let text = toml::to_string_pretty(self).unwrap_or_default();
-        std::fs::write(path, text)
+    /// Save config atomically to the path derived from `dirs`.
+    pub fn save(&self, dirs: crate::dirs::Directories) -> std::io::Result<()> {
+        crate::store::config::save(dirs, self)
     }
 
     pub fn sanitize(&mut self) {

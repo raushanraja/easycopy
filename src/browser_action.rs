@@ -1,9 +1,7 @@
 use crate::dirs::Directories;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::io::Result;
-use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use crate::opener;
@@ -151,37 +149,14 @@ pub fn open_url(url: &str) -> Result<()> {
 
 // ── Persistence ─────────────────────────────────────────────────────
 
-fn data_dir() -> PathBuf {
-    Directories::data_dir()
+/// Save browser actions. Directories is discovered once by the caller.
+pub fn save(actions: &[BrowserAction], dirs: Directories) -> Result<()> {
+    crate::store::browser_actions::save(dirs, actions)
 }
 
-pub fn save(actions: &[BrowserAction]) -> Result<()> {
-    let path = data_dir().join("browser_actions.json");
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let tmp = path.with_extension("json.tmp");
-    let file = fs::File::create(&tmp)?;
-    let writer = std::io::BufWriter::new(file);
-    serde_json::to_writer(writer, &actions)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    fs::rename(&tmp, path)?;
-    Ok(())
-}
-
-pub fn load() -> Vec<BrowserAction> {
-    let path = data_dir().join("browser_actions.json");
-    if !path.exists() {
-        return Vec::new();
-    }
-    let json = match fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
-    match serde_json::from_str(&json) {
-        Ok(actions) => actions,
-        Err(_) => Vec::new(),
-    }
+/// Load browser actions. Directories is discovered once by the caller.
+pub fn load(dirs: Directories) -> Vec<BrowserAction> {
+    crate::store::browser_actions::load(dirs)
 }
 
 // ── Utilities ───────────────────────────────────────────────────────

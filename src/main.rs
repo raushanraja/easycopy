@@ -13,7 +13,7 @@ use easycopy::hotkey::parse_hotkey;
 use easycopy::image_store::ImageStore;
 use easycopy::ipc;
 use easycopy::popup;
-use easycopy::storage;
+use easycopy::store::history as store_history;
 use easycopy::theme;
 use easycopy::x11_clipboard::{SelectionEvent, X11Watcher};
 
@@ -31,14 +31,16 @@ fn main() {
 // ── commands ───────────────────────────────────────────────────────
 
 fn cmd_popup() {
-    let config = Config::load();
+    let dirs = Directories::discover();
+    let config = Config::load(dirs.clone());
     let should_paste = Arc::new(AtomicBool::new(false));
-    popup::run_popup(config, should_paste);
+    popup::run_popup(config, should_paste, dirs);
 }
 
 fn cmd_clear() {
-    let image_store = ImageStore::from_config();
-    let items = storage::load_history();
+    let dirs = Directories::discover();
+    let image_store = ImageStore::new(dirs.clone());
+    let items = store_history::load_history(dirs.clone());
     for item in &items {
         if let ClipItem::Image { filename, .. } = item {
             if !filename.is_empty() {
@@ -47,7 +49,7 @@ fn cmd_clear() {
         }
     }
 
-    if storage::save_history(&VecDeque::new()).is_ok() {
+    if store_history::save_history(dirs, &VecDeque::new()).is_ok() {
         println!("History cleared.");
     } else {
         eprintln!("Failed to clear history.");
@@ -83,12 +85,12 @@ DATA:
 // ── daemon ─────────────────────────────────────────────────────────
 
 fn run_daemon() {
-    let config = Config::load();
+    let dirs = Directories::discover();
+    let config = Config::load(dirs.clone());
     theme::set_debug_logging(config.general.debug_logging);
 
-    let image_store = ImageStore::from_config();
-    let dirs = Directories::discover();
-    let data_dir = dirs.data_dir;
+    let image_store = ImageStore::new(dirs.clone());
+    let data_dir = dirs.data_dir.clone();
     let _ = std::fs::create_dir_all(&data_dir);
     let _ = std::fs::create_dir_all(image_store.dir());
 
@@ -115,14 +117,15 @@ fn run_daemon() {
     // immediately.  The cache files are ready by the time the user
     // opens the popup for the first time.
     {
-        let history_items = storage::load_history();
+        let history_items = store_history::load_history(dirs.clone());
         let images_dir = image_store.dir().to_path_buf();
+        let dirs_for_cache = dirs.clone();
         std::thread::Builder::new()
             .name("precache".into())
             .spawn(move || {
                 // Cache desktop apps (slow I/O scan)
                 let apps = easycopy::desktop::load_desktop_apps();
-                if let Err(e) = easycopy::desktop::save_apps_cache(&apps) {
+                if let Err(e) = easycopy::store::desktop::save_apps_cache(dirs_for_cache, &apps) {
                     eprintln!("[daemon] warning: failed to write apps cache: {e}");
                 } else {
                     eprintln!("[daemon] cached {} desktop apps", apps.len());
@@ -156,7 +159,7 @@ fn run_daemon() {
         config.general.max_text_items,
         config.general.max_image_items,
     );
-    history.set_items(storage::load_history());
+    history.set_items(store_history::load_history(dirs.clone()));
     let _ = image_store.cleanup_orphaned(history.items());
 
     let mut monitor = ClipboardMonitor::new();
@@ -252,7 +255,7 @@ fn run_daemon() {
                         if theme::is_debug_logging() {
                             eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, dirs.clone());
                     } else if theme::is_debug_logging() {
                         eprintln!("[daemon] monitor.poll() returned None (no change)");
                     }
@@ -265,7 +268,7 @@ fn run_daemon() {
                 tick_count = 0;
                 if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, dirs.clone());
                     }
                 }
             }
@@ -308,6 +311,7 @@ fn process_clip_item(
     history: &mut HistoryManager,
     last_save: &mut Option<Instant>,
     image_store: &ImageStore,
+    dirs: Directories,
 ) -> Option<ClipItem> {
     let item = match raw {
         ClipItem::Image {
@@ -339,7 +343,7 @@ fn process_clip_item(
             .map(|t| now.duration_since(t) > HISTORY_SAVE_INTERVAL)
             .unwrap_or(true)
         {
-            if let Err(e) = storage::save_history(history.items()) {
+            if let Err(e) = store_history::save_history(dirs, history.items()) {
                 eprintln!("[daemon] failed to save history: {e}");
             }
             *last_save = Some(now);
