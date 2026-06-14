@@ -174,6 +174,7 @@ struct PopupApp {
     cached_clip_search: Vec<String>,
     cached_clip_file_sizes: HashMap<String, u64>,
     cached_app_search: Vec<String>,
+    browser_preview: Option<String>,
 }
 
 impl PopupApp {
@@ -327,6 +328,7 @@ impl PopupApp {
             cached_clip_search: Vec::new(),
             cached_clip_file_sizes: HashMap::new(),
             cached_app_search: Vec::new(),
+            browser_preview: None,
         }
     }
 
@@ -360,11 +362,13 @@ impl PopupApp {
     fn apply_filter(&mut self) {
         let (mode, q) = filter_query(&self.query);
         if mode == QueryMode::Browser {
+            self.browser_preview = describe_browser_action(&self.query);
             self.filtered.clear();
             self.selected = 0;
             self.scroll_to_selected_once = true;
             return;
         }
+        self.browser_preview = None;
         let apps_only = mode == QueryMode::AppsOnly;
         // Collect matching clips, then sort by use_count descending so
         // frequently used items appear first.
@@ -797,6 +801,16 @@ impl PopupApp {
                 }
 
                 if self.filtered.is_empty() {
+                    if let Some(preview) = self.browser_preview.as_ref() {
+                        ui.vertical_centered(|ui| {
+                            ui.add_space(100.0);
+                            let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
+                            theme::paint_search_icon(ui, icon_rect, weak_color);
+                            ui.add_space(16.0);
+                            ui.label(egui::RichText::new(format!("→ {}", preview)).size(15.0).color(weak_color));
+                        });
+                        return;
+                    }
                     draw_empty_state(ui, "No matches", "Try a shorter search term.", weak_color);
                     return;
                 }
@@ -2207,6 +2221,47 @@ fn filter_query(query: &str) -> (QueryMode, String) {
     } else {
         (QueryMode::Normal, trimmed.to_lowercase())
     }
+}
+
+fn describe_browser_action(query: &str) -> Option<String> {
+    let trimmed = query.trim();
+    let text = trimmed.strip_prefix(':').unwrap_or(trimmed).trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    let shortcuts: &[(&str, &str)] = &[
+        ("google", "https://www.google.com"),
+        ("gmail", "https://mail.google.com"),
+        ("x", "https://x.com"),
+        ("twitter", "https://x.com"),
+        ("twitch", "https://www.twitch.tv"),
+        ("alibaba", "https://www.alibaba.com"),
+        ("amazon", "https://www.amazon.in"),
+        ("github", "https://github.com"),
+        ("youtube", "https://www.youtube.com"),
+        ("reddit", "https://www.reddit.com"),
+    ];
+    for (key, url) in shortcuts {
+        if text.eq_ignore_ascii_case(key) {
+            return Some(format!("Open {}", url));
+        }
+    }
+
+    if text.chars().all(|c| c.is_ascii_digit()) {
+        return Some(format!("Open http://localhost:{}", text));
+    }
+
+    if text.contains('.') && !text.contains(' ') {
+        let url = if text.starts_with("http://") || text.starts_with("https://") {
+            text.to_string()
+        } else {
+            format!("https://{}", text)
+        };
+        return Some(format!("Open {}", url));
+    }
+
+    Some(format!("Search Google for {}", text))
 }
 
 fn resolve_browser_url(query: &str) -> String {
