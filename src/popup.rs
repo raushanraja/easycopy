@@ -362,9 +362,35 @@ impl PopupApp {
     fn apply_filter(&mut self) {
         let (mode, q) = filter_query(&self.query);
         if mode == QueryMode::Browser {
-            self.browser_preview = describe_browser_action(&self.query);
-            self.filtered.clear();
-            self.selected = 0;
+            // Search clips first; only show browser preview when nothing matches.
+            let mut clip_matches: Vec<(usize, &ClipItem)> = self
+                .clips
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| q.is_empty() || self.cached_clip_search[*i].contains(q.as_str()))
+                .collect();
+            if clip_matches.is_empty() {
+                self.browser_preview = describe_browser_action(&self.query);
+                self.filtered.clear();
+                self.selected = 0;
+                self.scroll_to_selected_once = true;
+                return;
+            }
+            self.browser_preview = None;
+            clip_matches.sort_by(|(_, a), (_, b)| {
+                let a_count = match a {
+                    ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
+                };
+                let b_count = match b {
+                    ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
+                };
+                b_count.cmp(&a_count)
+            });
+            self.filtered = clip_matches
+                .into_iter()
+                .map(|(i, _)| DisplayItem::Clip { clip_idx: i })
+                .collect();
+            self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
             self.scroll_to_selected_once = true;
             return;
         }
@@ -499,10 +525,14 @@ impl PopupApp {
 
         let (mode, _) = filter_query(&self.query);
         if mode == QueryMode::Browser {
-            let url = resolve_browser_url(&self.query);
-            let _ = crate::opener::open_url(&url);
-            self.close_popup(ctx);
-            return;
+            // Only open the browser when no matching clips are available.
+            if self.filtered.is_empty() {
+                let url = resolve_browser_url(&self.query);
+                let _ = crate::opener::open_url(&url);
+                self.close_popup(ctx);
+                return;
+            }
+            // Fall through to normal clip selection logic below.
         }
 
         // Get the clip index first to avoid borrow conflicts
