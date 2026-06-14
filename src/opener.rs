@@ -32,3 +32,11 @@ pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
         }
     }
 }
+
+pub fn open_url(url: &str) -> std::io::Result<()> {
+    if url.is_empty() {
+        return Ok(());
+    }
+    Command::new("xdg-open").arg(url).spawn()?;
+    Ok(())
+}

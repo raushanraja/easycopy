@@ -29,9 +29,9 @@ enum DisplayItem {
     App { app_idx: usize },
 }
 
-const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps";
+const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps · : for browser";
 const FOOTER_HELP: &str =
-    "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search";
+    "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search · : browser";
 
 /// Entry point for the popup window. Blocks until the window is closed.
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
@@ -358,7 +358,14 @@ impl PopupApp {
     }
 
     fn apply_filter(&mut self) {
-        let (apps_only, q) = filter_query(&self.query);
+        let (mode, q) = filter_query(&self.query);
+        if mode == QueryMode::Browser {
+            self.filtered.clear();
+            self.selected = 0;
+            self.scroll_to_selected_once = true;
+            return;
+        }
+        let apps_only = mode == QueryMode::AppsOnly;
         // Collect matching clips, then sort by use_count descending so
         // frequently used items appear first.
         let mut clip_matches: Vec<(usize, &ClipItem)> = self
@@ -482,6 +489,14 @@ impl PopupApp {
 
     fn select_and_close(&mut self, ctx: &egui::Context) {
         if self.query.trim() == "/q" {
+            self.close_popup(ctx);
+            return;
+        }
+
+        let (mode, _) = filter_query(&self.query);
+        if mode == QueryMode::Browser {
+            let url = resolve_browser_url(&self.query);
+            let _ = crate::opener::open_url(&url);
             self.close_popup(ctx);
             return;
         }
@@ -2176,13 +2191,79 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
     }
 }
 
-fn filter_query(query: &str) -> (bool, String) {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum QueryMode {
+    Normal,
+    AppsOnly,
+    Browser,
+}
+
+fn filter_query(query: &str) -> (QueryMode, String) {
     let trimmed = query.trim();
     if let Some(app_query) = trimmed.strip_prefix('/') {
-        (true, app_query.trim().to_lowercase())
+        (QueryMode::AppsOnly, app_query.trim().to_lowercase())
+    } else if let Some(browser_query) = trimmed.strip_prefix(':') {
+        (QueryMode::Browser, browser_query.trim().to_string())
     } else {
-        (false, trimmed.to_lowercase())
+        (QueryMode::Normal, trimmed.to_lowercase())
     }
+}
+
+fn resolve_browser_url(query: &str) -> String {
+    let trimmed = query.trim();
+    let text = trimmed.strip_prefix(':').unwrap_or(trimmed).trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    let shortcuts: &[(&str, &str)] = &[
+        ("google", "https://www.google.com"),
+        ("gmail", "https://mail.google.com"),
+        ("x", "https://x.com"),
+        ("twitter", "https://x.com"),
+        ("twitch", "https://www.twitch.tv"),
+        ("alibaba", "https://www.alibaba.com"),
+        ("amazon", "https://www.amazon.in"),
+        ("github", "https://github.com"),
+        ("youtube", "https://www.youtube.com"),
+        ("reddit", "https://www.reddit.com"),
+    ];
+    for (key, url) in shortcuts {
+        if text.eq_ignore_ascii_case(key) {
+            return url.to_string();
+        }
+    }
+
+    if text.chars().all(|c| c.is_ascii_digit()) {
+        return format!("http://localhost:{}", text);
+    }
+
+    if text.contains('.') && !text.contains(' ') {
+        if text.starts_with("http://") || text.starts_with("https://") {
+            return text.to_string();
+        }
+        return format!("https://{}", text);
+    }
+
+    let encoded = percent_encode(text);
+    format!("https://www.google.com/search?q={}", encoded)
+}
+
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for b in s.bytes() {
+        match b {
+            b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => {
+                out.push('%');
+                out.push_str(&format!("{:02X}", b));
+            }
+        }
+    }
+    out
 }
 
 fn preview_text(text: &str, max_chars: usize) -> String {
@@ -2325,15 +2406,21 @@ mod tests {
 
     #[test]
     fn slash_prefix_switches_to_app_only_search() {
-        assert_eq!(filter_query("/firefox"), (true, "firefox".into()));
-        assert_eq!(filter_query(" / terminal "), (true, "terminal".into()));
-        assert_eq!(filter_query("/q"), (true, "q".into()));
+        assert_eq!(filter_query("/firefox"), (QueryMode::AppsOnly, "firefox".into()));
+        assert_eq!(filter_query(" / terminal "), (QueryMode::AppsOnly, "terminal".into()));
+        assert_eq!(filter_query("/q"), (QueryMode::AppsOnly, "q".into()));
+    }
+
+    #[test]
+    fn colon_prefix_switches_to_browser_mode() {
+        assert_eq!(filter_query(":google"), (QueryMode::Browser, "google".into()));
+        assert_eq!(filter_query(" : hello "), (QueryMode::Browser, "hello".into()));
     }
 
     #[test]
     fn normal_search_includes_clipboard_items() {
-        assert_eq!(filter_query("hello"), (false, "hello".into()));
-        assert_eq!(filter_query("  "), (false, "".into()));
+        assert_eq!(filter_query("hello"), (QueryMode::Normal, "hello".into()));
+        assert_eq!(filter_query("  "), (QueryMode::Normal, "".into()));
     }
 
     #[test]
