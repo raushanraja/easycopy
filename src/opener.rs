@@ -1,4 +1,4 @@
-use crate::dirs::Directories;
+use crate::store::Store;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
@@ -9,7 +9,7 @@ pub enum OpenTarget {
     Image(String),
 }
 
-pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
+pub fn open_item(target: &OpenTarget, store: &Store) -> std::io::Result<()> {
     match target {
         OpenTarget::Text(content) => {
             let temp_dir = std::env::temp_dir();
@@ -26,7 +26,7 @@ pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
             Ok(())
         }
         OpenTarget::Image(filename) => {
-            let path = Directories::images_dir().join(filename);
+            let path = store.images_dir().join(filename);
             Command::new("xdg-open").arg(path).spawn()?;
             Ok(())
         }

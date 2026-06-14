@@ -28,14 +28,14 @@ pub fn load_desktop_apps() -> Vec<DesktopApp> {
 }
 
 /// Full scan + cache update. Call from a background thread.
-pub fn refresh_and_cache_apps(dirs: crate::dirs::Directories) -> Vec<DesktopApp> {
+pub fn refresh_and_cache_apps(dirs: &crate::dirs::Directories) -> Vec<DesktopApp> {
     let mut apps = scan_desktop_files();
-    apply_app_usage(dirs.clone(), &mut apps);
+    apply_app_usage(dirs, &mut apps);
     let _ = crate::store::desktop::save_apps_cache(dirs, &apps);
     apps
 }
 
-pub fn record_app_launch(dirs: crate::dirs::Directories, app: &DesktopApp) {
+pub fn record_app_launch(dirs: &crate::dirs::Directories, app: &DesktopApp) {
     crate::store::desktop::record_app_launch(dirs, app);
 }
 
@@ -103,7 +103,7 @@ fn app_usage_key(app: &DesktopApp) -> String {
     format!("{}\n{}", app.name, app.exec)
 }
 
-fn apply_app_usage(dirs: crate::dirs::Directories, apps: &mut [DesktopApp]) {
+fn apply_app_usage(dirs: &crate::dirs::Directories, apps: &mut [DesktopApp]) {
     let usage = crate::store::desktop::load_app_usage(dirs);
     for app in apps {
         app.use_count = usage.get(&app_usage_key(app)).copied().unwrap_or(0);

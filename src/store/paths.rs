@@ -1,34 +1,31 @@
 use crate::dirs::Directories;
-use std::path::PathBuf;
 
 // ================================================================
 //  PATHS
 // ================================================================
-// Single source of truth for all data-file names within the
-// application's data directory. Each function takes a Directories
-// instance so paths are built from the same source — no module
-// independently guesses a filename.
+// Single source of truth for all data-file names. Each function
+// borrows Directories so callers don't need to clone or move it.
 
-pub fn history(dirs: Directories) -> PathBuf {
+pub fn history(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("index.json")
 }
 
-pub fn browser_actions(dirs: Directories) -> PathBuf {
+pub fn browser_actions(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("browser_actions.json")
 }
 
-pub fn apps_cache(dirs: Directories) -> PathBuf {
+pub fn apps_cache(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("apps_cache.json")
 }
 
-pub fn app_usage(dirs: Directories) -> PathBuf {
+pub fn app_usage(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("app_usage.json")
 }
 
-pub fn daemon_socket(dirs: Directories) -> PathBuf {
+pub fn daemon_socket(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("daemon.sock")
 }
 
-pub fn daemon_pid(dirs: Directories) -> PathBuf {
+pub fn daemon_pid(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("daemon.pid")
 }

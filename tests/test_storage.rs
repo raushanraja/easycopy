@@ -25,8 +25,8 @@ fn index_json_roundtrip_through_storage_helpers() {
         use_count: 0,
     });
 
-    history::save_history_to_path(dirs.clone(), &path, &items).unwrap();
-    let loaded = history::load_history_from_path(dirs, &path).unwrap();
+    history::save_history_to_path(&dirs, &path, &items).unwrap();
+    let loaded = history::load_history_from_path(&dirs, &path).unwrap();
     assert_eq!(loaded.len(), 2);
 
     match &loaded[0] {

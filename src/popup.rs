@@ -2,9 +2,9 @@ use crate::browser_action::{self, BrowserAction, QueryMode};
 use crate::clip_cache::{self, ClipCache};
 use crate::config::Config;
 use crate::desktop::DesktopApp;
-use crate::dirs::Directories;
 use crate::history::ClipItem;
 use crate::image_store::ImageStore;
+use crate::store::Store;
 use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -28,10 +28,10 @@ const FOOTER_HELP: &str =
 /// Entry point for the popup window. Blocks until the window is closed.
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
 /// the user chooses an item.
-pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, dirs: Directories) {
+pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
     let width = config.general.popup_width;
     let height = config.general.popup_height;
-    let image_store = ImageStore::new(dirs.clone());
+    let image_store = store.images();
     let image_store_for_paste = image_store.clone();
 
     let options = eframe::NativeOptions {
@@ -53,7 +53,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, dirs: Directorie
     let selected_item = Arc::new(std::sync::Mutex::new(None));
     let selected_item_for_app = selected_item.clone();
 
-    let dirs_for_popup = dirs.clone();
+    let store_for_popup = store.clone();
     let _ = eframe::run_native(
         "easycopy",
         options,
@@ -65,7 +65,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, dirs: Directorie
                 should_paste_after_window,
                 selected_item_for_app,
                 image_store.clone(),
-                dirs_for_popup,
+                store_for_popup,
             )))
         }),
     );
@@ -76,7 +76,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, dirs: Directorie
     };
 
     if let Some(item) = item_to_write {
-        let sent_via_ipc = is_daemon_running(&dirs) && crate::ipc::send_paste_request(&item).is_ok();
+        let sent_via_ipc = is_daemon_running(&store) && crate::ipc::send_paste_request(&store, &item).is_ok();
         if !sent_via_ipc {
             if let Ok(mut cb) = arboard::Clipboard::new() {
                 let is_image = item.is_image();
@@ -114,8 +114,8 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, dirs: Directorie
     }
 }
 
-fn is_daemon_running(dirs: &Directories) -> bool {
-    let pid_file = dirs.data_dir.join("daemon.pid");
+fn is_daemon_running(store: &Store) -> bool {
+    let pid_file = store.history_path().parent().unwrap().join("daemon.pid");
     if let Ok(pid_str) = std::fs::read_to_string(pid_file) {
         if let Ok(pid) = pid_str.trim().parse::<u32>() {
             return std::path::Path::new(&format!("/proc/{}", pid)).exists();
@@ -159,7 +159,7 @@ struct PopupApp {
     config: Config,
     theme_colors: Option<ThemeColors>,
     image_store: ImageStore,
-    dirs: Directories,
+    store: Store,
     preview_image: Option<(String, egui::TextureHandle)>,
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
@@ -189,7 +189,7 @@ impl PopupApp {
         should_paste: Arc<AtomicBool>,
         selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
         image_store: ImageStore,
-        dirs: Directories,
+        store: Store,
     ) -> Self {
         let images_dir = image_store.dir().to_path_buf();
         let images_dir_for_sizes = images_dir.clone();
@@ -199,9 +199,9 @@ impl PopupApp {
         // History load + cache computation thread
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
         let preview_chars = config.general.preview_chars;
-        let dirs_for_history = dirs.clone();
+        let store_for_history = store.clone();
         std::thread::spawn(move || {
-            let clips: Vec<ClipItem> = crate::store::history::load_history(dirs_for_history).into_iter().collect();
+            let clips: Vec<ClipItem> = store_for_history.load_history().into_iter().collect();
             let cache =
                 ClipCache::build_from(&clips, preview_chars, &images_dir_for_sizes);
             let _ = clip_tx.send((clips, cache));
@@ -209,7 +209,7 @@ impl PopupApp {
 
         // ── Async image thumbnail loading ──
         let (tx, rx) = std::sync::mpsc::channel();
-        let clips_for_images: Vec<ClipItem> = crate::store::history::load_history(dirs.clone()).into_iter().collect();
+        let clips_for_images: Vec<ClipItem> = store.load_history().into_iter().collect();
         let images_dir_for_thumbs = images_dir.clone();
         std::thread::spawn(move || {
             for item in clips_for_images {
@@ -245,23 +245,23 @@ impl PopupApp {
 
         // ── Async desktop app loading (from cache first, refresh in bg) ──
         let (app_tx, app_rx) = std::sync::mpsc::channel();
-        let dirs_for_desktop = dirs.clone();
+        let store_for_desktop = store.clone();
         std::thread::spawn(move || {
             // Try cache first – should be nearly instant
-            if let Some(cached) = crate::store::desktop::load_apps_cache(dirs_for_desktop.clone()) {
+            if let Some(cached) = store_for_desktop.load_apps_cache() {
                 let _ = app_tx.send(cached);
                 // Then refresh the cache in background for next time
-                let _ = crate::desktop::refresh_and_cache_apps(dirs_for_desktop);
+                let _ = store_for_desktop.refresh_and_cache_apps();
             } else {
                 // No cache yet – do the full scan (daemon may still be starting)
-                let apps = crate::desktop::refresh_and_cache_apps(dirs_for_desktop);
+                let apps = store_for_desktop.refresh_and_cache_apps();
                 let _ = app_tx.send(apps);
             }
         });
 
         let theme_colors = ThemeColors::from_config(&config);
 
-        let browser_actions = browser_action::load(dirs.clone());
+        let browser_actions = store.load_browser_actions();
         let cached_browser_action_search: Vec<String> = browser_actions
             .iter()
             .map(|a| format!("{} {} {}", a.query, a.url, a.description).to_lowercase())
@@ -336,7 +336,7 @@ impl PopupApp {
             lightbox_req_tx,
             lightbox_res_rx,
             image_store,
-            dirs,
+            store,
         }
     }
 
@@ -528,7 +528,7 @@ impl PopupApp {
         app.use_count = app.use_count.saturating_add(1);
         let app_for_record = app.clone();
         let exec = app.exec.clone();
-        crate::desktop::record_app_launch(self.dirs.clone(), &app_for_record);
+        self.store.record_app_launch(&app_for_record);
         spawn_app_detached(&exec);
         self.close_popup(ctx);
     }
@@ -595,7 +595,7 @@ impl PopupApp {
         {
             return;
         }
-        let _ = browser_action::save(&self.browser_actions, self.dirs.clone());
+        let _ = self.store.save_browser_actions(&self.browser_actions);
         self.last_popup_save = Some(now);
     }
 
@@ -609,17 +609,17 @@ impl PopupApp {
             return;
         }
         let items: VecDeque<ClipItem> = self.clips.iter().cloned().collect();
-        let _ = crate::store::history::save_history(self.dirs.clone(), &items);
+        let _ = self.store.save_history(&items);
         self.last_popup_save = Some(now);
     }
 
     fn force_persist_browser_actions(&self) {
-        let _ = browser_action::save(&self.browser_actions, self.dirs.clone());
+        let _ = self.store.save_browser_actions(&self.browser_actions);
     }
 
     fn force_persist_all(&self) {
         let items: VecDeque<ClipItem> = self.clips.iter().cloned().collect();
-        let _ = crate::store::history::save_history(self.dirs.clone(), &items);
+        let _ = self.store.save_history(&items);
     }
 
     fn rebuild_browser_action_cache(&mut self) {
@@ -982,7 +982,7 @@ impl PopupApp {
                             theme::paint_settings_icon(ui, settings_icon_rect, settings_color);
 
                             if settings_resp.clicked() {
-                                let path = self.dirs.config_path.clone();
+                                let path = self.store.history_path();
                                 let _ = std::process::Command::new("xdg-open").arg(path).spawn();
                             }
                             first_drawn = true;
@@ -1119,7 +1119,7 @@ impl PopupApp {
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                                             self.theme_colors =
                                                 ThemeColors::from_config(&self.config);
-                                            let _ = self.config.save(self.dirs.clone());
+                                            let _ = self.store.save_config(&self.config);
                                             ui.close_menu();
                                         }
                                     }
@@ -1186,7 +1186,7 @@ impl PopupApp {
                                                     ui.ctx(),
                                                     &self.config,
                                                 );
-                                                let _ = self.config.save(self.dirs.clone());
+                                                let _ = self.store.save_config(&self.config);
                                                 ui.close_menu();
                                             }
                                         }
@@ -1224,7 +1224,7 @@ impl PopupApp {
                                         ) {
                                             self.config.general.font_size = s_name.to_string();
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            let _ = self.config.save(self.dirs.clone());
+                                            let _ = self.store.save_config(&self.config);
                                             ui.close_menu();
                                         }
                                     }
@@ -1261,7 +1261,7 @@ impl PopupApp {
                                         ) {
                                             self.config.general.font_weight = w_name.to_string();
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            let _ = self.config.save(self.dirs.clone());
+                                            let _ = self.store.save_config(&self.config);
                                             ui.close_menu();
                                         }
                                     }
@@ -1294,7 +1294,7 @@ impl PopupApp {
                                         self.theme_colors.as_ref(),
                                     ) {
                                         self.config.general.keep_search_on_reopen = !keep_search;
-                                        let _ = self.config.save(self.dirs.clone());
+                                        let _ = self.store.save_config(&self.config);
                                     }
                                 },
                             );
@@ -2137,9 +2137,10 @@ impl PopupApp {
                         );
 
                         if open_resp.clicked() {
-                            let _ = crate::opener::open_item(&crate::opener::OpenTarget::Image(
-                                filename.clone(),
-                            ));
+                            let _ = crate::opener::open_item(
+                                &crate::opener::OpenTarget::Image(filename.clone()),
+                                &self.store,
+                            );
                         }
                     });
                 });
@@ -2300,7 +2301,7 @@ impl eframe::App for PopupApp {
         if ctrl_o {
             if let Some((ref filename, _)) = self.preview_image {
                 let _ =
-                    crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()));
+                    crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()), &self.store);
             } else if let Some(item) = self.selected_clip() {
                 let target = match item {
                     ClipItem::Text { content, .. } => {
@@ -2311,7 +2312,7 @@ impl eframe::App for PopupApp {
                     }
                 };
                 if let Some(t) = target {
-                    let _ = crate::opener::open_item(&t);
+                    let _ = crate::opener::open_item(&t, &self.store);
                 }
             } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
                 self.launch_app(*app_idx, ctx);
@@ -2402,12 +2403,12 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
 
 #[cfg(test)]
 #[allow(dead_code)]
-fn image_subtitle(filename: &str, ts: u64, dirs: &Directories) -> String {
+fn image_subtitle(filename: &str, ts: u64, store: &Store) -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    image_subtitle_with_now(filename, ts, now, dirs)
+    image_subtitle_with_now(filename, ts, now, store)
 }
 
 /// Like `image_subtitle` but uses a pre-cached file size instead of
@@ -2445,11 +2446,11 @@ fn format_size(bytes: u64) -> String {
 }
 
 #[cfg(test)]
-fn image_subtitle_with_now(filename: &str, ts: u64, now: u64, dirs: &Directories) -> String {
+fn image_subtitle_with_now(filename: &str, ts: u64, now: u64, store: &Store) -> String {
     if filename.is_empty() {
         relative_time_with_now(ts, now)
     } else {
-        let size_str = if let Ok(meta) = std::fs::metadata(dirs.images_dir.join(filename)) {
+        let size_str = if let Ok(meta) = std::fs::metadata(store.images_dir().join(filename)) {
             let bytes = meta.len();
             format_size(bytes)
         } else {
@@ -2550,10 +2551,10 @@ mod tests {
 
     #[test]
     fn image_subtitle_handles_empty_filename() {
-        let dirs = Directories::default();
-        assert_eq!(image_subtitle_with_now("", 90, 100, &dirs), "10s ago");
+        let store = Store::default();
+        assert_eq!(image_subtitle_with_now("", 90, 100, &store), "10s ago");
         assert_eq!(
-            image_subtitle_with_now("shot.png", 90, 100, &dirs),
+            image_subtitle_with_now("shot.png", 90, 100, &store),
             "shot.png · 10s ago"
         );
     }

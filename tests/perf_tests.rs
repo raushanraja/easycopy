@@ -69,7 +69,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        history::save_history_to_path(Directories::discover(), &path, &items).unwrap();
+        history::save_history_to_path(&Directories::discover(), &path, &items).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] save_history x100 (200 items): {:?}", elapsed);
@@ -81,7 +81,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        let _ = history::load_history_from_path(Directories::discover(), &path).unwrap();
+        let _ = history::load_history_from_path(&Directories::discover(), &path).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] load_history x100 (200 items): {:?}", elapsed);

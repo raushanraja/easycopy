@@ -11,7 +11,7 @@ use std::io::Result;
 // File I/O for browser_actions.json. Resolution logic stays in
 // browser_action.rs; this module only handles persistence.
 
-pub fn save(dirs: Directories, actions: &[BrowserAction]) -> Result<()> {
+pub fn save(dirs: &Directories, actions: &[BrowserAction]) -> Result<()> {
     let path = paths::browser_actions(dirs);
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -21,7 +21,7 @@ pub fn save(dirs: Directories, actions: &[BrowserAction]) -> Result<()> {
     AtomicWriter::write(&path, &data)
 }
 
-pub fn load(dirs: Directories) -> Vec<BrowserAction> {
+pub fn load(dirs: &Directories) -> Vec<BrowserAction> {
     let path = paths::browser_actions(dirs);
     if !path.exists() {
         return Vec::new();

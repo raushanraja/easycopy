@@ -1,4 +1,3 @@
-use crate::dirs::Directories;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Result;
@@ -150,12 +149,12 @@ pub fn open_url(url: &str) -> Result<()> {
 // ── Persistence ─────────────────────────────────────────────────────
 
 /// Save browser actions. Directories is discovered once by the caller.
-pub fn save(actions: &[BrowserAction], dirs: Directories) -> Result<()> {
+pub fn save(actions: &[BrowserAction], dirs: &crate::dirs::Directories) -> Result<()> {
     crate::store::browser_actions::save(dirs, actions)
 }
 
 /// Load browser actions. Directories is discovered once by the caller.
-pub fn load(dirs: Directories) -> Vec<BrowserAction> {
+pub fn load(dirs: &crate::dirs::Directories) -> Vec<BrowserAction> {
     crate::store::browser_actions::load(dirs)
 }
 

@@ -13,7 +13,7 @@ use std::path::Path;
 // ── load ────────────────────────────────────────────────────────────
 
 /// Load config from the path derived from `dirs`.
-pub fn load(dirs: Directories) -> Config {
+pub fn load(dirs: &Directories) -> Config {
     let path = dirs.config_path.clone();
     if path.exists() {
         match load_from_path(dirs, &path) {
@@ -31,7 +31,7 @@ pub fn load(dirs: Directories) -> Config {
     }
 }
 
-pub fn load_from_path(_dirs: Directories, path: &Path) -> Result<Config> {
+pub fn load_from_path(_dirs: &Directories, path: &Path) -> Result<Config> {
     let text = std::fs::read_to_string(path)?;
     match toml::from_str::<Config>(&text) {
         Ok(mut cfg) => {
@@ -54,12 +54,12 @@ pub fn load_from_path(_dirs: Directories, path: &Path) -> Result<Config> {
 // ── save ────────────────────────────────────────────────────────────
 
 /// Save config atomically to the path derived from `dirs`.
-pub fn save(dirs: Directories, config: &Config) -> Result<()> {
+pub fn save(dirs: &Directories, config: &Config) -> Result<()> {
     let path = dirs.config_path.clone();
     save_to_path(dirs, &path, config)
 }
 
-pub fn save_to_path(_dirs: Directories, path: &Path, config: &Config) -> Result<()> {
+pub fn save_to_path(_dirs: &Directories, path: &Path, config: &Config) -> Result<()> {
     let text = toml::to_string_pretty(config).unwrap_or_default();
     AtomicWriter::write(path, text.as_bytes())
 }

@@ -1,6 +1,7 @@
 use crate::dirs::Directories;
 use crate::history::ClipItem;
-use crate::store::paths::history;
+use crate::store::atomic::AtomicWriter;
+use crate::store::paths;
 use std::collections::VecDeque;
 use std::io::Result;
 use std::path::Path;
@@ -22,28 +23,28 @@ struct IndexRef<'a> {
 
 // ── save ────────────────────────────────────────────────────────────
 
-pub fn save_history(dirs: Directories, items: &VecDeque<ClipItem>) -> Result<()> {
-    save_history_to_path(dirs.clone(), &history(dirs), items)
+pub fn save_history(dirs: &Directories, items: &VecDeque<ClipItem>) -> Result<()> {
+    save_history_to_path(dirs, &paths::history(dirs), items)
 }
 
 pub fn save_history_to_path(
-    _dirs: Directories,
+    _dirs: &Directories,
     path: &Path,
     items: &VecDeque<ClipItem>,
 ) -> Result<()> {
     let data = serde_json::to_vec(&IndexRef { items })
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    crate::store::AtomicWriter::write(path, &data)
+    AtomicWriter::write(path, &data)
 }
 
 // ── load ────────────────────────────────────────────────────────────
 
-pub fn load_history(dirs: Directories) -> VecDeque<ClipItem> {
-    load_history_from_path(dirs.clone(), &history(dirs)).unwrap_or_default()
+pub fn load_history(dirs: &Directories) -> VecDeque<ClipItem> {
+    load_history_from_path(dirs, &paths::history(dirs)).unwrap_or_default()
 }
 
 pub fn load_history_from_path(
-    _dirs: Directories,
+    _dirs: &Directories,
     path: &Path,
 ) -> Result<VecDeque<ClipItem>> {
     if !path.exists() {
@@ -77,8 +78,8 @@ mod tests {
             height: 2,
             timestamp: ts,
             filename: filename.into(),
-            use_count: 0,
             data: None,
+            use_count: 0,
         }
     }
 
@@ -91,8 +92,8 @@ mod tests {
         items.push_back(text("hello", 1));
         items.push_back(image("a.png", 2));
 
-        save_history_to_path(dirs.clone(), &path, &items).unwrap();
-        let loaded = load_history_from_path(dirs, &path).unwrap();
+        save_history_to_path(&dirs, &path, &items).unwrap();
+        let loaded = load_history_from_path(&dirs, &path).unwrap();
         assert_eq!(loaded.len(), 2);
         assert!(matches!(&loaded[0], ClipItem::Text { content, .. } if content == "hello"));
     }
@@ -101,7 +102,7 @@ mod tests {
     fn missing_file_returns_empty() {
         let dirs = Directories::discover();
         let tmp = tempfile::tempdir().unwrap();
-        let loaded = load_history_from_path(dirs, &tmp.path().join("missing.json")).unwrap();
+        let loaded = load_history_from_path(&dirs, &tmp.path().join("missing.json")).unwrap();
         assert!(loaded.is_empty());
     }
 }

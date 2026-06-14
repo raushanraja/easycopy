@@ -19,9 +19,9 @@ pub struct ImageStore {
 
 impl ImageStore {
     /// Build from a Directories instance (caller discovers once).
-    pub fn new(dirs: Directories) -> Self {
+    pub fn new(dirs: &Directories) -> Self {
         Self {
-            dir: dirs.images_dir,
+            dir: dirs.images_dir.clone(),
         }
     }
 
