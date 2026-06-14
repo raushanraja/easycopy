@@ -568,7 +568,7 @@ impl PopupApp {
         for item in &self.clips {
             if let ClipItem::Image { filename, .. } = item {
                 if !filename.is_empty() {
-                    storage::delete_image_file(filename);
+                    self.image_store.delete(filename);
                 }
             }
         }

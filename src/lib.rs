@@ -5,6 +5,7 @@ pub mod config;
 pub mod desktop;
 pub mod dirs;
 pub mod history;
+pub mod history_storage;
 pub mod hotkey;
 pub mod icon_resolver;
 pub mod image_store;
