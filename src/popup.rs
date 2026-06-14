@@ -2,6 +2,7 @@ use crate::browser_action::{self, BrowserAction, QueryMode};
 use crate::config::Config;
 use crate::desktop::DesktopApp;
 use crate::history::ClipItem;
+use crate::image_store::ImageStore;
 use crate::storage;
 use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -41,6 +42,8 @@ const FOOTER_HELP: &str =
 pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
     let width = config.general.popup_width;
     let height = config.general.popup_height;
+    let image_store = ImageStore::from_config();
+    let image_store_for_paste = image_store.clone();
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -71,6 +74,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
                 config,
                 should_paste_after_window,
                 selected_item_for_app,
+                image_store.clone(),
             )))
         }),
     );
@@ -88,7 +92,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
                 let write_result = match item {
                     ClipItem::Text { content, .. } => cb.set_text(content),
                     ClipItem::Image { filename, .. } => {
-                        if let Ok((w, h, data)) = storage::load_image(&filename) {
+                        if let Ok((w, h, data)) = image_store_for_paste.load(&filename) {
                             let img_data = arboard::ImageData {
                                 width: w as usize,
                                 height: h as usize,
@@ -163,6 +167,7 @@ struct PopupApp {
     scroll_to_selected_once: bool,
     config: Config,
     theme_colors: Option<ThemeColors>,
+    image_store: ImageStore,
     preview_image: Option<(String, egui::TextureHandle)>,
     lightbox_zoom: f32,
     lightbox_pan: egui::Vec2,
@@ -194,7 +199,11 @@ impl PopupApp {
         config: Config,
         should_paste: Arc<AtomicBool>,
         selected_item_out: Arc<std::sync::Mutex<Option<ClipItem>>>,
+        image_store: ImageStore,
     ) -> Self {
+        let images_dir = image_store.dir().to_path_buf();
+        let images_dir_for_sizes = images_dir.clone();
+
         // ── All heavy I/O happens in background threads ──
 
         // History load + cache computation thread
@@ -241,7 +250,7 @@ impl PopupApp {
             for item in &clips {
                 if let ClipItem::Image { filename, .. } = item {
                     if !filename.is_empty() {
-                        if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+                        if let Ok(meta) = std::fs::metadata(images_dir_for_sizes.join(filename)) {
                             cached_clip_file_sizes.insert(filename.clone(), meta.len());
                         }
                     }
@@ -260,14 +269,14 @@ impl PopupApp {
         // ── Async image thumbnail loading ──
         let (tx, rx) = std::sync::mpsc::channel();
         let clips_for_images: Vec<ClipItem> = storage::load_history().into_iter().collect();
+        let images_dir_for_thumbs = images_dir.clone();
         std::thread::spawn(move || {
             for item in clips_for_images {
                 if let ClipItem::Image { filename, .. } = item {
                     if filename.is_empty() {
                         continue;
                     }
-                    let images_dir = Config::images_dir();
-                    let thumb_path = images_dir.join(format!("thumb_{}", filename));
+                    let thumb_path = images_dir_for_thumbs.join(format!("thumb_{}", filename));
 
                     if let Ok(img) = image::open(&thumb_path) {
                         let rgba = img.to_rgba8();
@@ -276,7 +285,7 @@ impl PopupApp {
                         let _ = tx.send((filename, ci));
                     } else {
                         // Fallback: load original image, resize, save as thumbnail, and send.
-                        let path = images_dir.join(&filename);
+                        let path = images_dir_for_thumbs.join(&filename);
                         if let Ok(img) = image::open(path) {
                             let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
                             let rgba = thumb.to_rgba8();
@@ -334,9 +343,10 @@ impl PopupApp {
         // ── Async lightbox image loading ──
         let (lightbox_req_tx, lightbox_req_rx) = std::sync::mpsc::channel();
         let (lightbox_res_tx, lightbox_res_rx) = std::sync::mpsc::channel();
+        let images_dir = image_store.dir().to_path_buf();
         std::thread::spawn(move || {
             while let Ok(filename) = lightbox_req_rx.recv() {
-                let path = Config::images_dir().join(&filename);
+                let path = images_dir.join(&filename);
                 if let Ok(img) = image::open(path) {
                     let large = img.resize(500, 500, image::imageops::FilterType::Triangle);
                     let rgba = large.to_rgba8();
@@ -386,6 +396,7 @@ impl PopupApp {
             icon_res_rx,
             lightbox_req_tx,
             lightbox_res_rx,
+            image_store,
         }
     }
 
@@ -506,7 +517,7 @@ impl PopupApp {
         for item in &self.clips {
             if let ClipItem::Image { filename, .. } = item {
                 if !filename.is_empty() && !self.cached_clip_file_sizes.contains_key(filename) {
-                    if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+                    if let Ok(meta) = std::fs::metadata(self.image_store.dir().join(filename)) {
                         self.cached_clip_file_sizes
                             .insert(filename.clone(), meta.len());
                     }
@@ -642,7 +653,7 @@ impl PopupApp {
 
                 if let Some(ClipItem::Image { filename, .. }) = self.clips.get(orig_idx) {
                     if !filename.is_empty() {
-                        storage::delete_image_file(filename);
+                        self.image_store.delete(filename);
                         self.textures.remove(filename);
                     }
                 }

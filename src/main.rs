@@ -9,6 +9,7 @@ use easycopy::clipboard::ClipboardMonitor;
 use easycopy::config::Config;
 use easycopy::history::{ClipItem, HistoryManager};
 use easycopy::hotkey::parse_hotkey;
+use easycopy::image_store::ImageStore;
 use easycopy::ipc;
 use easycopy::popup;
 use easycopy::storage;
@@ -35,11 +36,12 @@ fn cmd_popup() {
 }
 
 fn cmd_clear() {
+    let image_store = ImageStore::from_config();
     let items = storage::load_history();
     for item in &items {
         if let ClipItem::Image { filename, .. } = item {
             if !filename.is_empty() {
-                storage::delete_image_file(filename);
+                image_store.delete(filename);
             }
         }
     }
@@ -83,10 +85,10 @@ fn run_daemon() {
     let config = Config::load();
     theme::set_debug_logging(config.general.debug_logging);
 
-    // Cache directory paths to avoid repeated PathBuf construction in the hot loop
+    let image_store = ImageStore::from_config();
     let data_dir = Config::data_dir();
     let _ = std::fs::create_dir_all(&data_dir);
-    let _ = std::fs::create_dir_all(Config::images_dir());
+    let _ = std::fs::create_dir_all(image_store.dir());
 
     // Write PID file to allow the popup to verify the daemon is active
     let pid = std::process::id();
@@ -112,6 +114,7 @@ fn run_daemon() {
     // opens the popup for the first time.
     {
         let history_items = storage::load_history();
+        let images_dir = image_store.dir().to_path_buf();
         std::thread::Builder::new()
             .name("precache".into())
             .spawn(move || {
@@ -124,7 +127,6 @@ fn run_daemon() {
                 }
 
                 // Pre-compute missing thumbnails for all image clips
-                let images_dir = Config::images_dir();
                 for item in &history_items {
                     if let ClipItem::Image { filename, .. } = item {
                         if filename.is_empty() {
@@ -153,7 +155,7 @@ fn run_daemon() {
         config.general.max_image_items,
     );
     history.set_items(storage::load_history());
-    storage::cleanup_orphaned(history.items());
+    let _ = image_store.cleanup_orphaned(history.items());
 
     let mut monitor = ClipboardMonitor::new();
 
@@ -210,7 +212,7 @@ fn run_daemon() {
                     let write_ok = match item {
                         ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
                         ClipItem::Image { filename, .. } => {
-                            if let Ok((w, h, data)) = storage::load_image(&filename) {
+                            if let Ok((w, h, data)) = image_store.load(&filename) {
                                 let img_data = arboard::ImageData {
                                     width: w as usize,
                                     height: h as usize,
@@ -248,7 +250,7 @@ fn run_daemon() {
                         if theme::is_debug_logging() {
                             eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store);
                     } else if theme::is_debug_logging() {
                         eprintln!("[daemon] monitor.poll() returned None (no change)");
                     }
@@ -261,7 +263,7 @@ fn run_daemon() {
                 tick_count = 0;
                 if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store);
                     }
                 }
             }
@@ -303,6 +305,7 @@ fn process_clip_item(
     raw: ClipItem,
     history: &mut HistoryManager,
     last_save: &mut Option<Instant>,
+    image_store: &ImageStore,
 ) -> Option<ClipItem> {
     let item = match raw {
         ClipItem::Image {
@@ -311,7 +314,7 @@ fn process_clip_item(
             height,
             timestamp,
             ..
-        } => match storage::save_image_owned(bytes, width, height) {
+        } => match image_store.save_owned(bytes, width, height) {
             Ok(filename) => ClipItem::Image {
                 width,
                 height,

@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::history::ClipItem;
-use std::collections::{HashSet, VecDeque};
+use crate::image_store::ImageStore;
+use std::collections::VecDeque;
 use std::io::Result;
 use std::path::{Path, PathBuf};
 
@@ -51,79 +52,49 @@ pub fn load_history_from_path(path: &Path) -> Result<VecDeque<ClipItem>> {
         .unwrap_or_default())
 }
 
-// ── image files ────────────────────────────────────────────────────
+// ── image files (delegates to ImageStore) ──────────────────────────
 
-fn save_thumbnail_to_dir(dir: &Path, filename: &str, img: &image::RgbaImage) -> Result<()> {
-    let dyn_img = image::DynamicImage::ImageRgba8(img.clone());
-    let thumb = dyn_img.resize(52, 52, image::imageops::FilterType::Triangle);
-    let thumb_path = dir.join(format!("thumb_{}", filename));
-    thumb
-        .save(&thumb_path)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    Ok(())
+use std::sync::OnceLock;
+
+fn image_store() -> &'static ImageStore {
+    static STORE: OnceLock<ImageStore> = OnceLock::new();
+    STORE.get_or_init(|| ImageStore::from_config())
 }
 
 pub fn save_image(data: &[u8], w: u32, h: u32) -> Result<String> {
-    save_image_to_dir(&Config::images_dir(), data, w, h)
+    image_store().save(data, w, h)
 }
 
 pub fn save_image_to_dir(dir: &Path, data: &[u8], w: u32, h: u32) -> Result<String> {
-    std::fs::create_dir_all(dir)?;
-    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let hash = simple_hash(data) & 0xFFF;
-    let filename = format!("img_{}_{:03x}.png", ts, hash);
-    let filepath = dir.join(&filename);
-    let img = image::RgbaImage::from_raw(w, h, data.to_vec()).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
-    })?;
-    img.save(&filepath)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-    // Save thumbnail too
-    let _ = save_thumbnail_to_dir(dir, &filename, &img);
-
-    Ok(filename)
+    let store = ImageStore::new(dir.to_path_buf());
+    store.save_to_dir(dir, data, w, h)
 }
 
-/// Like `save_image` but takes ownership of the data buffer, avoiding an
-/// extra copy when the caller already owns the `Vec<u8>`.
 pub fn save_image_owned(data: Vec<u8>, w: u32, h: u32) -> Result<String> {
-    save_image_owned_to_dir(&Config::images_dir(), data, w, h)
+    image_store().save_owned(data, w, h)
 }
 
-pub fn save_image_owned_to_dir(dir: &Path, data: Vec<u8>, w: u32, h: u32) -> Result<String> {
-    std::fs::create_dir_all(dir)?;
-    let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let hash = simple_hash(&data) & 0xFFF;
-    let filename = format!("img_{}_{:03x}.png", ts, hash);
-    let filepath = dir.join(&filename);
-    let img = image::RgbaImage::from_raw(w, h, data).ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
-    })?;
-    img.save(&filepath)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-    // Save thumbnail too
-    let _ = save_thumbnail_to_dir(dir, &filename, &img);
-
-    Ok(filename)
+pub fn save_image_owned_to_dir(
+    dir: &Path,
+    data: Vec<u8>,
+    w: u32,
+    h: u32,
+) -> Result<String> {
+    let store = ImageStore::new(dir.to_path_buf());
+    store.save_owned_to_dir(dir, data, w, h)
 }
 
 pub fn load_image(filename: &str) -> Result<(u32, u32, Vec<u8>)> {
-    load_image_from_dir(&Config::images_dir(), filename)
+    image_store().load(filename)
 }
 
 pub fn load_image_from_dir(dir: &Path, filename: &str) -> Result<(u32, u32, Vec<u8>)> {
-    let path = dir.join(filename);
-    let img = image::open(&path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    let rgba = img.to_rgba8();
-    let (w, h) = rgba.dimensions();
-    Ok((w, h, rgba.into_raw()))
+    let store = ImageStore::new(dir.to_path_buf());
+    store.load_from_dir(dir, filename)
 }
 
 pub fn delete_image_file(filename: &str) {
-    let _ = std::fs::remove_file(Config::images_dir().join(filename));
-    let _ = std::fs::remove_file(Config::images_dir().join(format!("thumb_{}", filename)));
+    image_store().delete(filename);
 }
 
 pub fn delete_image_file_in_dir(dir: &Path, filename: &str) -> Result<()> {
@@ -139,46 +110,12 @@ pub fn delete_image_file_in_dir(dir: &Path, filename: &str) -> Result<()> {
 }
 
 pub fn cleanup_orphaned(items: &VecDeque<ClipItem>) {
-    let _ = cleanup_orphaned_in_dir(&Config::images_dir(), items);
+    let _ = image_store().cleanup_orphaned(items);
 }
 
 pub fn cleanup_orphaned_in_dir(dir: &Path, items: &VecDeque<ClipItem>) -> Result<usize> {
-    if !dir.exists() {
-        return Ok(0);
-    }
-
-    let known: HashSet<&str> = items
-        .iter()
-        .filter_map(|i| match i {
-            ClipItem::Image { filename, .. } if !filename.is_empty() => Some(filename.as_str()),
-            _ => None,
-        })
-        .collect();
-
-    let mut removed = 0usize;
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-            continue;
-        };
-        let base_name = name.strip_prefix("thumb_").unwrap_or(name);
-        if !known.contains(base_name) {
-            std::fs::remove_file(path)?;
-            removed += 1;
-        }
-    }
-    Ok(removed)
-}
-
-fn simple_hash(data: &[u8]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    data.hash(&mut h);
-    h.finish()
+    let store = ImageStore::new(dir.to_path_buf());
+    store.cleanup_orphaned_in_dir(dir, items)
 }
 
 #[cfg(test)]
