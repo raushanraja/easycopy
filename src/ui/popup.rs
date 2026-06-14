@@ -1,11 +1,11 @@
-use crate::browser_action::{self, BrowserAction, QueryMode};
-use crate::clip_cache::{self, ClipCache};
+use crate::browser::action::{BrowserAction, QueryMode};
+use crate::clipboard::cache::ClipCache;
 use crate::config::Config;
-use crate::desktop::DesktopApp;
-use crate::history::ClipItem;
-use crate::image_store::ImageStore;
+use crate::launcher::DesktopApp;
+use crate::clipboard::history::ClipItem;
+use crate::store::images::ImageStore;
 use crate::store::Store;
-use crate::theme::{self, ThemeColors};
+use crate::ui::theme::{self, ThemeColors};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -351,11 +351,11 @@ impl PopupApp {
     }
 
     fn apply_filter(&mut self) {
-        let (mode, q) = browser_action::filter_query(&self.query);
+        let (mode, q) = crate::browser::action::filter_query(&self.query);
         if mode == QueryMode::Browser {
-            let match_indices = browser_action::search(&self.browser_actions, &self.query);
+            let match_indices = crate::browser::action::search(&self.browser_actions, &self.query);
             if match_indices.is_empty() {
-                self.browser_preview = browser_action::resolve(&self.query).map(|a| a.description);
+                self.browser_preview = crate::browser::action::resolve(&self.query).map(|a| a.description);
                 self.filtered.clear();
                 self.selected = 0;
                 self.scroll_to_selected_once = true;
@@ -454,21 +454,21 @@ impl PopupApp {
             return;
         }
 
-        let (mode, _) = browser_action::filter_query(&self.query);
+        let (mode, _) = crate::browser::action::filter_query(&self.query);
         if mode == QueryMode::Browser {
             if let Some(DisplayItem::BrowserAction { action_idx }) =
                 self.filtered.get(self.selected)
             {
                 self.browser_actions[*action_idx].use_count += 1;
-                let _ = browser_action::open_url(&self.browser_actions[*action_idx].url);
+                let _ = crate::browser::action::open_url(&self.browser_actions[*action_idx].url);
                 self.force_persist_browser_actions();
                 self.close_popup(ctx);
                 return;
             }
 
             if self.filtered.is_empty() {
-                if let Some(resolved) = browser_action::resolve(&self.query) {
-                    let _ = browser_action::open_url(&resolved.url);
+                if let Some(resolved) = crate::browser::action::resolve(&self.query) {
+                    let _ = crate::browser::action::open_url(&resolved.url);
                     let query_text = resolved.query;
                     if let Some(existing) =
                         self.browser_actions.iter_mut().find(|a| a.query == query_text)
@@ -1449,7 +1449,7 @@ impl PopupApp {
                                     .clip_cache
                                     .get_preview(orig_idx)
                                     .map(|s| s.to_string())
-                                    .unwrap_or_else(|| clip_cache::preview_text(content, self.preview_chars));
+                                    .unwrap_or_else(|| crate::clipboard::cache::preview_text(content, self.preview_chars));
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(preview)
@@ -2137,8 +2137,8 @@ impl PopupApp {
                         );
 
                         if open_resp.clicked() {
-                            let _ = crate::opener::open_item(
-                                &crate::opener::OpenTarget::Image(filename.clone()),
+                            let _ = crate::browser::open::open_item(
+                                &crate::browser::open::OpenTarget::Image(filename.clone()),
                                 &self.store,
                             );
                         }
@@ -2301,18 +2301,18 @@ impl eframe::App for PopupApp {
         if ctrl_o {
             if let Some((ref filename, _)) = self.preview_image {
                 let _ =
-                    crate::opener::open_item(&crate::opener::OpenTarget::Image(filename.clone()), &self.store);
+                    crate::browser::open::open_item(&crate::browser::open::OpenTarget::Image(filename.clone()), &self.store);
             } else if let Some(item) = self.selected_clip() {
                 let target = match item {
                     ClipItem::Text { content, .. } => {
-                        Some(crate::opener::OpenTarget::Text(content.clone()))
+                        Some(crate::browser::open::OpenTarget::Text(content.clone()))
                     }
                     ClipItem::Image { filename, .. } => {
-                        Some(crate::opener::OpenTarget::Image(filename.clone()))
+                        Some(crate::browser::open::OpenTarget::Image(filename.clone()))
                     }
                 };
                 if let Some(t) = target {
-                    let _ = crate::opener::open_item(&t, &self.store);
+                    let _ = crate::browser::open::open_item(&t, &self.store);
                 }
             } else if let Some(DisplayItem::App { app_idx }) = self.filtered.get(self.selected) {
                 self.launch_app(*app_idx, ctx);
@@ -2497,8 +2497,8 @@ mod tests {
 
     #[test]
     fn preview_collapses_whitespace_and_truncates() {
-        assert_eq!(clip_cache::preview_text("hello\n   world", 50), "hello world");
-        assert_eq!(clip_cache::preview_text("abcdef", 3), "abc…");
+        assert_eq!(crate::clipboard::cache::preview_text("hello\n   world", 50), "hello world");
+        assert_eq!(crate::clipboard::cache::preview_text("abcdef", 3), "abc…");
     }
 
     #[test]
@@ -2532,21 +2532,21 @@ mod tests {
 
     #[test]
     fn slash_prefix_switches_to_app_only_search() {
-        assert_eq!(browser_action::filter_query("/firefox"), (browser_action::QueryMode::AppsOnly, "firefox".into()));
-        assert_eq!(browser_action::filter_query(" / terminal "), (browser_action::QueryMode::AppsOnly, "terminal".into()));
-        assert_eq!(browser_action::filter_query("/q"), (browser_action::QueryMode::AppsOnly, "q".into()));
+        assert_eq!(crate::browser::action::filter_query("/firefox"), (QueryMode::AppsOnly, "firefox".into()));
+        assert_eq!(crate::browser::action::filter_query(" / terminal "), (QueryMode::AppsOnly, "terminal".into()));
+        assert_eq!(crate::browser::action::filter_query("/q"), (QueryMode::AppsOnly, "q".into()));
     }
 
     #[test]
     fn colon_prefix_switches_to_browser_mode() {
-        assert_eq!(browser_action::filter_query(":google"), (browser_action::QueryMode::Browser, "google".into()));
-        assert_eq!(browser_action::filter_query(" : hello "), (browser_action::QueryMode::Browser, "hello".into()));
+        assert_eq!(crate::browser::action::filter_query(":google"), (QueryMode::Browser, "google".into()));
+        assert_eq!(crate::browser::action::filter_query(" : hello "), (QueryMode::Browser, "hello".into()));
     }
 
     #[test]
     fn normal_search_includes_clipboard_items() {
-        assert_eq!(browser_action::filter_query("hello"), (browser_action::QueryMode::Normal, "hello".into()));
-        assert_eq!(browser_action::filter_query("  "), (browser_action::QueryMode::Normal, "".into()));
+        assert_eq!(crate::browser::action::filter_query("hello"), (QueryMode::Normal, "hello".into()));
+        assert_eq!(crate::browser::action::filter_query("  "), (QueryMode::Normal, "".into()));
     }
 
     #[test]

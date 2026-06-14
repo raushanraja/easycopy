@@ -1,4 +1,4 @@
-use crate::history::ClipItem;
+use crate::clipboard::history::ClipItem;
 use crate::store::Store;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

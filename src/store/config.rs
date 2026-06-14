@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::dirs::Directories;
+use crate::config::dirs::Directories;
 use crate::store::atomic::AtomicWriter;
 use std::io::Result;
 use std::path::Path;

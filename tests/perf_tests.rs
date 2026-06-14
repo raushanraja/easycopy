@@ -1,5 +1,5 @@
-use easycopy::dirs::Directories;
-use easycopy::history::{ClipItem, HistoryManager};
+use easycopy::clipboard::history::{ClipItem, HistoryManager};
+use easycopy::config::dirs::Directories;
 use easycopy::store::history;
 use std::collections::VecDeque;
 use std::time::Instant;

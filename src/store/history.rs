@@ -1,5 +1,5 @@
-use crate::dirs::Directories;
-use crate::history::ClipItem;
+use crate::config::dirs::Directories;
+use crate::clipboard::history::ClipItem;
 use crate::store::atomic::AtomicWriter;
 use crate::store::paths;
 use std::collections::VecDeque;

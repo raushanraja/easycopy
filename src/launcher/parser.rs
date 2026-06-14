@@ -1,5 +1,5 @@
-use crate::desktop::DesktopApp;
-use crate::icon_resolver::resolve_icon;
+use super::DesktopApp;
+use crate::launcher::icon::resolve_icon;
 use std::path::Path;
 
 // ================================================================

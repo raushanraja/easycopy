@@ -1,7 +1,7 @@
-use easycopy::dirs::Directories;
-use easycopy::history::ClipItem;
-use easycopy::image_store::ImageStore;
+use easycopy::clipboard::history::ClipItem;
+use easycopy::config::dirs::Directories;
 use easycopy::store::history;
+use easycopy::store::ImageStore;
 use std::collections::VecDeque;
 
 #[test]

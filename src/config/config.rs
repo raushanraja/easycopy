@@ -195,12 +195,12 @@ impl Default for Config {
 impl Config {
     /// Load config from the path derived from `dirs`.
     /// Directories is discovered once by the caller.
-    pub fn load(dirs: &crate::dirs::Directories) -> Self {
+    pub fn load(dirs: &crate::config::dirs::Directories) -> Self {
         crate::store::config::load(dirs)
     }
 
     /// Save config atomically to the path derived from `dirs`.
-    pub fn save(&self, dirs: &crate::dirs::Directories) -> std::io::Result<()> {
+    pub fn save(&self, dirs: &crate::config::dirs::Directories) -> std::io::Result<()> {
         crate::store::config::save(dirs, self)
     }
 

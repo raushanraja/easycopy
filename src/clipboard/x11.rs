@@ -107,7 +107,7 @@ impl X11Watcher {
         loop {
             match self.conn.poll_for_event() {
                 Ok(Some(Event::XfixesSelectionNotify(xf))) => {
-                    if crate::theme::is_debug_logging() {
+                    if crate::ui::theme::is_debug_logging() {
                         eprintln!(
                             "[x11] SelectionNotify: selection={}, owner={}",
                             xf.selection, xf.owner
@@ -120,14 +120,14 @@ impl X11Watcher {
                     }
                 }
                 Ok(Some(other)) => {
-                    if crate::theme::is_debug_logging() {
+                    if crate::ui::theme::is_debug_logging() {
                         eprintln!("[x11] other event: {:?}", other);
                     }
                     continue;
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    if crate::theme::is_debug_logging() {
+                    if crate::ui::theme::is_debug_logging() {
                         eprintln!("[x11] poll_for_event error: {:?}", e);
                     }
                     break;

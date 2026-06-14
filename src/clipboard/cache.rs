@@ -1,4 +1,4 @@
-use crate::history::ClipItem;
+use crate::clipboard::history::ClipItem;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -162,7 +162,7 @@ impl ClipCache {
 //  INTERNAL HELPERS
 // ================================================================
 
-pub(crate) fn preview_text(text: &str, max_chars: usize) -> String {
+pub fn preview_text(text: &str, max_chars: usize) -> String {
     let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut preview = normalized.chars().take(max_chars).collect::<String>();
     if normalized.chars().count() > max_chars {
@@ -193,8 +193,8 @@ mod tests {
             height: 200,
             timestamp: 0,
             filename: filename.into(),
-            use_count: 0,
             data: None,
+            use_count: 0,
         }
     }
 

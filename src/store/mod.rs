@@ -1,8 +1,8 @@
-use crate::browser_action::BrowserAction;
+use crate::browser::action::BrowserAction;
 use crate::config::Config;
-use crate::desktop::DesktopApp;
-use crate::dirs::Directories;
-use crate::history::ClipItem;
+use crate::config::dirs::Directories;
+use crate::launcher::DesktopApp;
+use crate::clipboard::history::ClipItem;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::Result;
@@ -82,12 +82,12 @@ impl Store {
     }
 
     pub fn record_app_launch(&self, app: &DesktopApp) {
-        crate::desktop::record_app_launch(&self.dirs, app)
+        crate::launcher::desktop::record_app_launch(&self.dirs, app)
     }
 
     /// Full scan + cache update. Call from a background thread.
     pub fn refresh_and_cache_apps(&self) -> Vec<DesktopApp> {
-        crate::desktop::refresh_and_cache_apps(&self.dirs)
+        crate::launcher::desktop::refresh_and_cache_apps(&self.dirs)
     }
 
     // ── browser actions ───────────────────────────────────────────

@@ -20,7 +20,7 @@ pub fn is_debug_logging() -> bool {
 /// Emit a diagnostic message only when debug logging is enabled.
 macro_rules! debug_log {
     ($($arg:tt)*) => {{
-        if crate::theme::DEBUG_LOGGING.load(std::sync::atomic::Ordering::Relaxed) {
+        if DEBUG_LOGGING.load(std::sync::atomic::Ordering::Relaxed) {
             eprintln!($($arg)*);
         }
     }};
@@ -559,7 +559,7 @@ fn log_font_diag(preset: &str, prop: &Option<String>, mono: &Option<String>) {
 }
 
 /// Load custom font files into the egui context based on the config.
-fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
+pub fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
     let preset = config.general.font_preset.as_str();
     if preset == "default"
         && config.general.font_proportional_path.is_empty()

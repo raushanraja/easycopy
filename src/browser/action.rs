@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::Result;
 use std::sync::LazyLock;
 
-use crate::opener;
+use crate::browser::open;
 
 // ── Type ────────────────────────────────────────────────────────────
 
@@ -17,7 +17,7 @@ pub struct BrowserAction {
 
 // ── Shortcut table (single source of truth) ─────────────────────────
 
-static SHORTCUTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+pub static SHORTCUTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
         ("google", "https://www.google.com"),
         ("gmail", "https://mail.google.com"),
@@ -27,8 +27,8 @@ static SHORTCUTS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(
         ("alibaba", "https://www.alibaba.com"),
         ("amazon", "https://www.amazon.in"),
         ("github", "https://github.com"),
-        ("youtube", "https://www.youtube.com"),
-        ("reddit", "https://www.reddit.com"),
+        ("youtube", "https://www.youtube.com/"),
+        ("reddit", "https://www.reddit.com/"),
     ]
     .into_iter()
     .collect()
@@ -143,18 +143,18 @@ pub fn search(actions: &[BrowserAction], query: &str) -> Vec<usize> {
 
 /// Open a URL in the user's browser.
 pub fn open_url(url: &str) -> Result<()> {
-    opener::open_url(url)
+    open::open_url(url)
 }
 
 // ── Persistence ─────────────────────────────────────────────────────
 
 /// Save browser actions. Directories is discovered once by the caller.
-pub fn save(actions: &[BrowserAction], dirs: &crate::dirs::Directories) -> Result<()> {
+pub fn save(actions: &[BrowserAction], dirs: &crate::config::dirs::Directories) -> Result<()> {
     crate::store::browser_actions::save(dirs, actions)
 }
 
 /// Load browser actions. Directories is discovered once by the caller.
-pub fn load(dirs: &crate::dirs::Directories) -> Vec<BrowserAction> {
+pub fn load(dirs: &crate::config::dirs::Directories) -> Vec<BrowserAction> {
     crate::store::browser_actions::load(dirs)
 }
 

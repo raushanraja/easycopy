@@ -1,4 +1,4 @@
-use crate::history::ClipItem;
+use crate::clipboard::history::ClipItem;
 use arboard::Clipboard;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

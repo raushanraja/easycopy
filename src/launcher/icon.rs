@@ -162,7 +162,7 @@ mod tests {
         fs::create_dir_all(&svg_dir).unwrap();
         fs::write(svg_dir.join("Thunderbird.svg"), b"svg").unwrap();
 
-        // Create: flat pixmap
+        // Create flat pixmap
         fs::write(root.join("gimp.png"), b"png").unwrap();
 
         // Create case-different file for CI matching (strategy 2)

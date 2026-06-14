@@ -1,5 +1,5 @@
-use crate::browser_action::BrowserAction;
-use crate::dirs::Directories;
+use crate::browser::action::BrowserAction;
+use crate::config::dirs::Directories;
 use crate::store::atomic::AtomicWriter;
 use crate::store::paths;
 use std::fs;

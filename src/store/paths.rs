@@ -1,4 +1,4 @@
-use crate::dirs::Directories;
+use crate::config::dirs::Directories;
 
 // ================================================================
 //  PATHS

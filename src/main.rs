@@ -1,13 +1,14 @@
 use easycopy::clipboard::ClipboardMonitor;
-use easycopy::dirs::Directories;
-use easycopy::history::{ClipItem, HistoryManager};
+use easycopy::clipboard::x11::{SelectionEvent, X11Watcher};
+use easycopy::config::dirs::Directories;
+use easycopy::clipboard::history::{ClipItem, HistoryManager};
 use easycopy::hotkey::parse_hotkey;
-use easycopy::image_store::ImageStore;
 use easycopy::ipc;
-use easycopy::popup;
+use easycopy::launcher::desktop;
+use easycopy::store::ImageStore;
 use easycopy::store::Store;
-use easycopy::theme;
-use easycopy::x11_clipboard::{SelectionEvent, X11Watcher};
+use easycopy::ui::popup;
+use easycopy::ui::theme;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -120,7 +121,7 @@ fn run_daemon() {
             .name("precache".into())
             .spawn(move || {
                 // Cache desktop apps (slow I/O scan)
-                let apps = easycopy::desktop::load_desktop_apps();
+                let apps = desktop::load_desktop_apps();
                 if let Err(e) = store_for_cache.save_apps_cache(&apps) {
                     eprintln!("[daemon] warning: failed to write apps cache: {e}");
                 } else {
