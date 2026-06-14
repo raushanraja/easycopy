@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::desktop::DesktopApp;
 use crate::history::ClipItem;
 use crate::storage;
+use crate::storage::BrowserAction;
 use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,9 +28,10 @@ struct LoadedData {
 enum DisplayItem {
     Clip { clip_idx: usize },
     App { app_idx: usize },
+    BrowserAction { action_idx: usize },
 }
 
-const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps · : for browser";
+const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps · : for browser (saves history)";
 const FOOTER_HELP: &str =
     "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search · : browser";
 
@@ -175,6 +177,8 @@ struct PopupApp {
     cached_clip_file_sizes: HashMap<String, u64>,
     cached_app_search: Vec<String>,
     browser_preview: Option<String>,
+    browser_actions: Vec<BrowserAction>,
+    cached_browser_action_search: Vec<String>,
 }
 
 impl PopupApp {
@@ -299,6 +303,12 @@ impl PopupApp {
 
         let theme_colors = ThemeColors::from_config(&config);
 
+        let browser_actions = crate::storage::load_browser_actions();
+        let cached_browser_action_search: Vec<String> = browser_actions
+            .iter()
+            .map(|a| format!("{} {} {}", a.query, a.url, a.description).to_lowercase())
+            .collect();
+
         Self {
             clips: Vec::new(),
             apps: Vec::new(),
@@ -329,6 +339,8 @@ impl PopupApp {
             cached_clip_file_sizes: HashMap::new(),
             cached_app_search: Vec::new(),
             browser_preview: None,
+            browser_actions,
+            cached_browser_action_search,
         }
     }
 
@@ -362,14 +374,17 @@ impl PopupApp {
     fn apply_filter(&mut self) {
         let (mode, q) = filter_query(&self.query);
         if mode == QueryMode::Browser {
-            // Search clips first; only show browser preview when nothing matches.
-            let mut clip_matches: Vec<(usize, &ClipItem)> = self
-                .clips
+            let mut matches: Vec<(usize, &BrowserAction)> = self
+                .browser_actions
                 .iter()
                 .enumerate()
-                .filter(|(i, _)| q.is_empty() || self.cached_clip_search[*i].contains(q.as_str()))
+                .filter(|(i, _)| {
+                    q.is_empty()
+                        || self.cached_browser_action_search[*i]
+                            .contains(&q.to_lowercase())
+                })
                 .collect();
-            if clip_matches.is_empty() {
+            if matches.is_empty() {
                 self.browser_preview = describe_browser_action(&self.query);
                 self.filtered.clear();
                 self.selected = 0;
@@ -377,18 +392,10 @@ impl PopupApp {
                 return;
             }
             self.browser_preview = None;
-            clip_matches.sort_by(|(_, a), (_, b)| {
-                let a_count = match a {
-                    ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
-                };
-                let b_count = match b {
-                    ClipItem::Text { use_count, .. } | ClipItem::Image { use_count, .. } => *use_count,
-                };
-                b_count.cmp(&a_count)
-            });
-            self.filtered = clip_matches
+            matches.sort_by(|(_, a), (_, b)| b.use_count.cmp(&a.use_count));
+            self.filtered = matches
                 .into_iter()
-                .map(|(i, _)| DisplayItem::Clip { clip_idx: i })
+                .map(|(i, _)| DisplayItem::BrowserAction { action_idx: i })
                 .collect();
             self.selected = self.selected.min(self.filtered.len().saturating_sub(1));
             self.scroll_to_selected_once = true;
@@ -525,14 +532,54 @@ impl PopupApp {
 
         let (mode, _) = filter_query(&self.query);
         if mode == QueryMode::Browser {
-            // Only open the browser when no matching clips are available.
-            if self.filtered.is_empty() {
-                let url = resolve_browser_url(&self.query);
+            if let Some(DisplayItem::BrowserAction { action_idx }) =
+                self.filtered.get(self.selected)
+            {
+                let url = self.browser_actions[*action_idx].url.clone();
+                if let Some(existing) = self.browser_actions.get_mut(*action_idx) {
+                    existing.use_count += 1;
+                }
                 let _ = crate::opener::open_url(&url);
+                self.persist_browser_actions();
                 self.close_popup(ctx);
                 return;
             }
-            // Fall through to normal clip selection logic below.
+
+            if self.filtered.is_empty() {
+                let url = resolve_browser_url(&self.query);
+                let _ = crate::opener::open_url(&url);
+
+                let text = self.query.trim_start_matches(':').trim();
+                let desc = if url.contains("google.com/search?q=") {
+                    format!("Search Google for {}", text)
+                } else {
+                    format!("Open {}", url)
+                };
+
+                if let Some(existing) =
+                    self.browser_actions.iter_mut().find(|a| a.query == text)
+                {
+                    existing.use_count += 1;
+                } else {
+                    self.browser_actions.push(BrowserAction {
+                        query: text.to_string(),
+                        url: url.clone(),
+                        description: desc,
+                        use_count: 1,
+                    });
+                }
+                self.cached_browser_action_search = self
+                    .browser_actions
+                    .iter()
+                    .map(|a| {
+                        format!("{} {} {}", a.query, a.url, a.description)
+                            .to_lowercase()
+                    })
+                    .collect();
+                self.persist_browser_actions();
+                self.close_popup(ctx);
+                return;
+            }
         }
 
         // Get the clip index first to avoid borrow conflicts
@@ -622,6 +669,10 @@ impl PopupApp {
         self.cached_clip_search.clear();
         self.cached_clip_file_sizes.clear();
         self.apply_filter();
+    }
+
+    fn persist_browser_actions(&self) {
+        let _ = crate::storage::save_browser_actions(&self.browser_actions);
     }
 
     fn persist_all(&self) {
@@ -1314,6 +1365,10 @@ impl PopupApp {
                 };
                 self.draw_app_row(ui, row, app_idx, app)
             }
+            DisplayItem::BrowserAction { action_idx } => {
+                let action = self.browser_actions[action_idx].clone();
+                self.draw_browser_action_row(ui, row, action_idx, action)
+            }
         }
     }
 
@@ -1714,6 +1769,114 @@ impl PopupApp {
                                 .truncate(),
                             );
                         }
+                    });
+                });
+            });
+
+        response.clicked()
+    }
+
+    fn draw_browser_action_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        row: usize,
+        _action_idx: usize,
+        action: BrowserAction,
+    ) -> bool {
+        let is_selected = row == self.selected;
+        let row_height = 60.0;
+
+        let card_id = ui.make_persistent_id(format!("browser_action_row_{}", row));
+        let rect = egui::Rect::from_min_size(
+            ui.next_widget_position(),
+            egui::vec2(ui.available_width(), row_height),
+        );
+        let response = ui.interact(rect, card_id, egui::Sense::click());
+
+        if is_selected && self.scroll_to_selected_once {
+            ui.scroll_to_rect(rect, Some(egui::Align::Center));
+            self.scroll_to_selected_once = false;
+        }
+
+        let theme = self.theme_colors.as_ref();
+
+        let fill = if is_selected {
+            theme.map_or_else(|| ui.visuals().selection.bg_fill, |t| t.card_bg_selected)
+        } else if response.hovered() {
+            theme.map_or_else(
+                || ui.visuals().widgets.hovered.bg_fill,
+                |t| t.card_bg_hovered,
+            )
+        } else {
+            theme.map_or_else(
+                || ui.visuals().widgets.noninteractive.bg_fill,
+                |t| t.card_bg,
+            )
+        };
+
+        let stroke = if is_selected {
+            theme.map_or_else(
+                || egui::Stroke::new(1.5, ui.visuals().selection.bg_fill),
+                |t| egui::Stroke::new(1.5, t.card_stroke_selected),
+            )
+        } else {
+            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color)
+        };
+
+        let rounding = theme.map_or(0.0, |t| t.card_rounding);
+
+        egui::Frame::none()
+            .fill(fill)
+            .rounding(rounding)
+            .stroke(stroke)
+            .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.set_height(row_height - 20.0);
+
+                if is_selected && self.config.general.enable_theming {
+                    let bar_width = 4.0;
+                    let bar_height = 24.0;
+                    let bar_rect = egui::Rect::from_center_size(
+                        egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
+                        egui::vec2(bar_width, bar_height),
+                    );
+                    ui.painter().rect_filled(
+                        bar_rect,
+                        egui::Rounding::same(2.0),
+                        self.theme_colors
+                            .as_ref()
+                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
+                    );
+                }
+
+                ui.horizontal(|ui| {
+                    let (icon_rect, _) = ui.allocate_exact_size(
+                        egui::vec2(36.0, 36.0),
+                        egui::Sense::hover(),
+                    );
+                    theme::paint_search_icon(ui, icon_rect, self.weak_color(ui));
+                    ui.add_space(8.0);
+
+                    ui.vertical(|ui| {
+                        ui.set_width((ui.available_width() - 40.0).max(120.0));
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&action.description)
+                                    .size(15.0)
+                                    .strong()
+                            )
+                            .truncate(),
+                        );
+                        ui.add_space(2.0);
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&action.url)
+                                    .size(12.5)
+                                    .color(self.weak_color(ui))
+                            )
+                            .truncate(),
+                        );
                     });
                 });
             });

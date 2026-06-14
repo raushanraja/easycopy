@@ -4,6 +4,24 @@ use std::collections::{HashSet, VecDeque};
 use std::io::Result;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BrowserAction {
+    pub query: String,
+    pub url: String,
+    pub description: String,
+    pub use_count: usize,
+}
+
+#[derive(serde::Deserialize)]
+struct BrowserActionIndex {
+    actions: Vec<BrowserAction>,
+}
+
+#[derive(serde::Serialize)]
+struct BrowserActionIndexRef<'a> {
+    actions: &'a [BrowserAction],
+}
+
 #[derive(serde::Deserialize)]
 struct Index {
     items: VecDeque<ClipItem>,
@@ -49,6 +67,41 @@ pub fn load_history_from_path(path: &Path) -> Result<VecDeque<ClipItem>> {
     Ok(serde_json::from_str::<Index>(&json)
         .map(|idx| idx.items)
         .unwrap_or_default())
+}
+
+// ── browser actions persistence ──────────────────────────────────
+
+pub fn browser_actions_path() -> PathBuf {
+    Config::data_dir().join("browser_actions.json")
+}
+
+pub fn save_browser_actions(actions: &[BrowserAction]) -> Result<()> {
+    let path = browser_actions_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let file = std::fs::File::create(&tmp)?;
+    let writer = std::io::BufWriter::new(file);
+    serde_json::to_writer(writer, &BrowserActionIndexRef { actions })
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::rename(&tmp, path)?; // atomic on same filesystem
+    Ok(())
+}
+
+pub fn load_browser_actions() -> Vec<BrowserAction> {
+    let path = browser_actions_path();
+    if !path.exists() {
+        return Vec::new();
+    }
+    let json = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    match serde_json::from_str::<BrowserActionIndex>(&json) {
+        Ok(idx) => idx.actions,
+        Err(_) => Vec::new(),
+    }
 }
 
 // ── image files ────────────────────────────────────────────────────
