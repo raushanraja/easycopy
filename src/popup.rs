@@ -1,4 +1,5 @@
 use crate::browser_action::{self, BrowserAction, QueryMode};
+use crate::clip_cache::{self, ClipCache};
 use crate::config::Config;
 use crate::desktop::DesktopApp;
 use crate::dirs::Directories;
@@ -9,18 +10,6 @@ use crate::theme::{self, ThemeColors};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-// ================================================================
-//  LoadedData — sent from background thread when history+caches done
-// ================================================================
-
-struct LoadedData {
-    clips: Vec<ClipItem>,
-    cached_clip_char_counts: Vec<usize>,
-    cached_clip_previews: Vec<String>,
-    cached_clip_search: Vec<String>,
-    cached_clip_file_sizes: HashMap<String, u64>,
-}
 
 // ================================================================
 //  DisplayItem — unified list entry for clips and apps
@@ -176,14 +165,11 @@ struct PopupApp {
     last_popup_save: Option<std::time::Instant>,
     focused_once: bool,
     rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
-    clip_rx: std::sync::mpsc::Receiver<LoadedData>,
+    clip_rx: std::sync::mpsc::Receiver<(Vec<ClipItem>, ClipCache)>,
     clips_loaded: bool,
     app_rx: std::sync::mpsc::Receiver<Vec<DesktopApp>>,
     apps_loaded: bool,
-    cached_clip_char_counts: Vec<usize>,
-    cached_clip_previews: Vec<String>,
-    cached_clip_search: Vec<String>,
-    cached_clip_file_sizes: HashMap<String, u64>,
+    clip_cache: ClipCache,
     cached_app_search: Vec<String>,
     browser_preview: Option<String>,
     browser_actions: Vec<BrowserAction>,
@@ -212,59 +198,9 @@ impl PopupApp {
         let preview_chars = config.general.preview_chars;
         std::thread::spawn(move || {
             let clips: Vec<ClipItem> = storage::load_history().into_iter().collect();
-
-            // Compute caches in the background alongside loading
-            let cached_clip_char_counts: Vec<usize> = clips
-                .iter()
-                .map(|item| match item {
-                    ClipItem::Text { content, .. } => content.chars().count(),
-                    _ => 0,
-                })
-                .collect();
-
-            let cached_clip_previews: Vec<String> = clips
-                .iter()
-                .map(|item| match item {
-                    ClipItem::Text { content, .. } => preview_text(content, preview_chars),
-                    _ => String::new(),
-                })
-                .collect();
-
-            let cached_clip_search: Vec<String> = clips
-                .iter()
-                .map(|item| match item {
-                    ClipItem::Text { content, .. } => content.to_lowercase(),
-                    ClipItem::Image {
-                        width,
-                        height,
-                        filename,
-                        ..
-                    } => format!(
-                        "{}\u{00d7}{} {}x{} {}",
-                        width, height, width, height, filename
-                    )
-                    .to_lowercase(),
-                })
-                .collect();
-
-            let mut cached_clip_file_sizes = HashMap::new();
-            for item in &clips {
-                if let ClipItem::Image { filename, .. } = item {
-                    if !filename.is_empty() {
-                        if let Ok(meta) = std::fs::metadata(images_dir_for_sizes.join(filename)) {
-                            cached_clip_file_sizes.insert(filename.clone(), meta.len());
-                        }
-                    }
-                }
-            }
-
-            let _ = clip_tx.send(LoadedData {
-                clips,
-                cached_clip_char_counts,
-                cached_clip_previews,
-                cached_clip_search,
-                cached_clip_file_sizes,
-            });
+            let cache =
+                ClipCache::build_from(&clips, preview_chars, &images_dir_for_sizes);
+            let _ = clip_tx.send((clips, cache));
         });
 
         // ── Async image thumbnail loading ──
@@ -385,10 +321,7 @@ impl PopupApp {
             clips_loaded: false,
             app_rx,
             apps_loaded: false,
-            cached_clip_char_counts: Vec::new(),
-            cached_clip_previews: Vec::new(),
-            cached_clip_search: Vec::new(),
-            cached_clip_file_sizes: HashMap::new(),
+            clip_cache: ClipCache::default(),
             cached_app_search: Vec::new(),
             browser_preview: None,
             browser_actions,
@@ -440,7 +373,7 @@ impl PopupApp {
             .iter()
             .enumerate()
             .filter(|(i, _)| {
-                !apps_only && (q.is_empty() || self.cached_clip_search[*i].contains(q.as_str()))
+                !apps_only && self.clip_cache.matches_query(*i, q.as_str())
             })
             .collect();
         clip_matches.sort_by(|(_, a), (_, b)| {
@@ -478,53 +411,8 @@ impl PopupApp {
 
     /// Recompute all per-item caches after the item list changes.
     fn rebuild_caches(&mut self) {
-        self.cached_clip_char_counts = self
-            .clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.chars().count(),
-                _ => 0,
-            })
-            .collect();
-
-        self.cached_clip_previews = self
-            .clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => preview_text(content, self.preview_chars),
-                _ => String::new(),
-            })
-            .collect();
-
-        self.cached_clip_search = self
-            .clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.to_lowercase(),
-                ClipItem::Image {
-                    width,
-                    height,
-                    filename,
-                    ..
-                } => format!(
-                    "{}\u{00d7}{} {}x{} {}",
-                    width, height, width, height, filename
-                )
-                .to_lowercase(),
-            })
-            .collect();
-
-        self.cached_clip_file_sizes.clear();
-        for item in &self.clips {
-            if let ClipItem::Image { filename, .. } = item {
-                if !filename.is_empty() && !self.cached_clip_file_sizes.contains_key(filename) {
-                    if let Ok(meta) = std::fs::metadata(self.image_store.dir().join(filename)) {
-                        self.cached_clip_file_sizes
-                            .insert(filename.clone(), meta.len());
-                    }
-                }
-            }
-        }
+        self.clip_cache
+            .rebuild_from(&self.clips, self.preview_chars, self.image_store.dir());
 
         self.cached_app_search = self
             .apps
@@ -688,10 +576,7 @@ impl PopupApp {
         self.query.clear();
         self.force_persist_all();
         self.textures.clear();
-        self.cached_clip_char_counts.clear();
-        self.cached_clip_previews.clear();
-        self.cached_clip_search.clear();
-        self.cached_clip_file_sizes.clear();
+        self.clip_cache.clear();
         self.apply_filter();
     }
 
@@ -1555,10 +1440,10 @@ impl PopupApp {
                                 }
                                 ui.set_width(available_width);
                                 let preview = self
-                                    .cached_clip_previews
-                                    .get(orig_idx)
-                                    .cloned()
-                                    .unwrap_or_else(|| preview_text(content, self.preview_chars));
+                                    .clip_cache
+                                    .get_preview(orig_idx)
+                                    .map(|s| s.to_string())
+                                    .unwrap_or_else(|| clip_cache::preview_text(content, self.preview_chars));
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(preview)
@@ -1570,9 +1455,8 @@ impl PopupApp {
                                 );
                                 ui.add_space(2.0);
                                 let char_count = self
-                                    .cached_clip_char_counts
-                                    .get(orig_idx)
-                                    .copied()
+                                    .clip_cache
+                                    .get_char_count(orig_idx)
                                     .unwrap_or_else(|| content.chars().count());
                                 ui.label(
                                     egui::RichText::new(format!(
@@ -1654,7 +1538,7 @@ impl PopupApp {
                                     .truncate(),
                                 );
                                 ui.add_space(2.0);
-                                let file_size = self.cached_clip_file_sizes.get(filename).copied();
+                                let file_size = self.clip_cache.file_size(filename);
                                 ui.label(
                                     egui::RichText::new(image_subtitle_cached(
                                         filename, *timestamp, file_size,
@@ -2306,12 +2190,9 @@ impl eframe::App for PopupApp {
 
         // ── Async clip loading: receive history+caches once loaded ──
         if !self.clips_loaded {
-            if let Ok(data) = self.clip_rx.try_recv() {
-                self.clips = data.clips;
-                self.cached_clip_char_counts = data.cached_clip_char_counts;
-                self.cached_clip_previews = data.cached_clip_previews;
-                self.cached_clip_search = data.cached_clip_search;
-                self.cached_clip_file_sizes = data.cached_clip_file_sizes;
+            if let Ok((clips, cache)) = self.clip_rx.try_recv() {
+                self.clips = clips;
+                self.clip_cache = cache;
                 self.clips_loaded = true;
                 // Build initial filtered list now that we have clips
                 self.filtered = (0..self.clips.len())
@@ -2513,15 +2394,6 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
     }
 }
 
-fn preview_text(text: &str, max_chars: usize) -> String {
-    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut preview = normalized.chars().take(max_chars).collect::<String>();
-    if normalized.chars().count() > max_chars {
-        preview.push('…');
-    }
-    preview
-}
-
 #[cfg(test)]
 #[allow(dead_code)]
 fn image_subtitle(filename: &str, ts: u64) -> String {
@@ -2618,8 +2490,8 @@ mod tests {
 
     #[test]
     fn preview_collapses_whitespace_and_truncates() {
-        assert_eq!(preview_text("hello\n   world", 50), "hello world");
-        assert_eq!(preview_text("abcdef", 3), "abc…");
+        assert_eq!(clip_cache::preview_text("hello\n   world", 50), "hello world");
+        assert_eq!(clip_cache::preview_text("abcdef", 3), "abc…");
     }
 
     #[test]

@@ -1,4 +1,5 @@
 pub mod browser_action;
+pub mod clip_cache;
 pub mod clipboard;
 pub mod config;
 pub mod desktop;
