@@ -10,6 +10,7 @@ Linux clipboard history manager. Daemon monitors the clipboard, popup lets you b
 - Text and image clipboard history
 - Keyboard-first popup with fast search
 - `/` prefix for app-only search
+- `:` prefix for browser actions (open URLs and web searches)
 - Frequent items are prioritized in search results
 - Themes, font presets, and compact layout options
 - X11 auto-paste support through `xdotool`
@@ -27,6 +28,10 @@ Linux clipboard history manager. Daemon monitors the clipboard, popup lets you b
 | Theme picker | Footer controls |
 | --- | --- |
 | <img src="assets/theme_selection.png" alt="Theme selection menu in easycopy" width="330"> | <img src="assets/footer.png" alt="Footer controls in easycopy" width="330"> |
+
+| Browser action: preset Gmail | Browser action: search if no match | Browser action: show previous |
+| --- | --- | --- |
+| <img src="assets/browser_action_preset_gmail.png" alt="Browser action preset for Gmail" width="330"> | <img src="assets/browser_action_search_if_no_match.png" alt="Browser action search if no clipboard match" width="330"> | <img src="assets/browser_action_show_previous.png" alt="Browser action show previous browser action" width="330"> |
 
 ## Usage
 
