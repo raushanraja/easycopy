@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::dirs::Directories;
 use crate::history::ClipItem;
 use crate::image_store::ImageStore;
 use std::collections::VecDeque;
@@ -18,7 +18,7 @@ struct IndexRef<'a> {
 // ── index persistence ──────────────────────────────────────────────
 
 pub fn history_path() -> PathBuf {
-    Config::data_dir().join("index.json")
+    Directories::data_dir().join("index.json")
 }
 
 pub fn save_history(items: &VecDeque<ClipItem>) -> Result<()> {

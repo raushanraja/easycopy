@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::dirs::Directories;
 use crate::history::ClipItem;
 use std::collections::HashSet;
 use std::collections::VecDeque;
@@ -21,11 +21,16 @@ impl ImageStore {
         Self { dir }
     }
 
-    /// Create an ImageStore from Config (for convenience in non-test code).
+    /// Create an ImageStore from Directories (for convenience in non-test code).
     /// Test code should use `ImageStore::new(temp_dir)` directly.
-    pub fn from_config() -> Self {
-        let dir = Config::images_dir();
+    pub fn from_dirs() -> Self {
+        let dir = Directories::images_dir();
         Self::new(dir)
+    }
+
+    /// Create an ImageStore from Config (legacy — prefer from_dirs).
+    pub fn from_config() -> Self {
+        Self::from_dirs()
     }
 
     pub fn dir(&self) -> &Path {

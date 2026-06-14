@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn default_max_text_items() -> usize {
     200
@@ -194,28 +194,9 @@ impl Default for Config {
 }
 
 impl Config {
-    pub fn config_dir() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("easycopy")
-    }
-
-    pub fn data_dir() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("easycopy")
-    }
-
-    pub fn images_dir() -> PathBuf {
-        Self::data_dir().join("images")
-    }
-
-    pub fn config_path() -> PathBuf {
-        Self::config_dir().join("config.toml")
-    }
-
     pub fn load() -> Self {
-        let path = Self::config_path();
+        let dirs = crate::dirs::Directories::discover();
+        let path = dirs.config_path;
         if path.exists() {
             match Self::load_from_path(&path) {
                 Ok(cfg) => cfg,
@@ -253,7 +234,8 @@ impl Config {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        self.save_to_path(&Self::config_path())
+        let dirs = crate::dirs::Directories::discover();
+        self.save_to_path(&dirs.config_path)
     }
 
     pub fn save_to_path(&self, path: &Path) -> std::io::Result<()> {

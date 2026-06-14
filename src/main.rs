@@ -7,6 +7,7 @@ const HISTORY_SAVE_INTERVAL: Duration = Duration::from_secs(1);
 
 use easycopy::clipboard::ClipboardMonitor;
 use easycopy::config::Config;
+use easycopy::dirs::Directories;
 use easycopy::history::{ClipItem, HistoryManager};
 use easycopy::hotkey::parse_hotkey;
 use easycopy::image_store::ImageStore;
@@ -86,7 +87,8 @@ fn run_daemon() {
     theme::set_debug_logging(config.general.debug_logging);
 
     let image_store = ImageStore::from_config();
-    let data_dir = Config::data_dir();
+    let dirs = Directories::discover();
+    let data_dir = dirs.data_dir;
     let _ = std::fs::create_dir_all(&data_dir);
     let _ = std::fs::create_dir_all(image_store.dir());
 

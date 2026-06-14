@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::dirs::Directories;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;
@@ -26,7 +26,7 @@ pub fn open_item(target: &OpenTarget) -> std::io::Result<()> {
             Ok(())
         }
         OpenTarget::Image(filename) => {
-            let path = Config::images_dir().join(filename);
+            let path = Directories::images_dir().join(filename);
             Command::new("xdg-open").arg(path).spawn()?;
             Ok(())
         }

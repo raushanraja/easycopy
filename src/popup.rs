@@ -1,6 +1,7 @@
 use crate::browser_action::{self, BrowserAction, QueryMode};
 use crate::config::Config;
 use crate::desktop::DesktopApp;
+use crate::dirs::Directories;
 use crate::history::ClipItem;
 use crate::image_store::ImageStore;
 use crate::storage;
@@ -124,7 +125,7 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>) {
 }
 
 fn is_daemon_running() -> bool {
-    let pid_file = Config::data_dir().join("daemon.pid");
+    let pid_file = Directories::data_dir().join("daemon.pid");
     if let Ok(pid_str) = std::fs::read_to_string(pid_file) {
         if let Ok(pid) = pid_str.trim().parse::<u32>() {
             return std::path::Path::new(&format!("/proc/{}", pid)).exists();
@@ -1090,7 +1091,7 @@ impl PopupApp {
                             theme::paint_settings_icon(ui, settings_icon_rect, settings_color);
 
                             if settings_resp.clicked() {
-                                let path = Config::config_path();
+                                let path = Directories::config_path();
                                 let _ = std::process::Command::new("xdg-open").arg(path).spawn();
                             }
                             first_drawn = true;
@@ -2570,7 +2571,7 @@ fn image_subtitle_with_now(filename: &str, ts: u64, now: u64) -> String {
     if filename.is_empty() {
         relative_time_with_now(ts, now)
     } else {
-        let size_str = if let Ok(meta) = std::fs::metadata(Config::images_dir().join(filename)) {
+        let size_str = if let Ok(meta) = std::fs::metadata(Directories::images_dir().join(filename)) {
             let bytes = meta.len();
             format_size(bytes)
         } else {

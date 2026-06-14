@@ -1,3 +1,4 @@
+use crate::dirs::Directories;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -5,7 +6,6 @@ use std::io::Result;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
-use crate::config::Config;
 use crate::opener;
 
 // ── Type ────────────────────────────────────────────────────────────
@@ -152,7 +152,7 @@ pub fn open_url(url: &str) -> Result<()> {
 // ── Persistence ─────────────────────────────────────────────────────
 
 fn data_dir() -> PathBuf {
-    Config::data_dir()
+    Directories::data_dir()
 }
 
 pub fn save(actions: &[BrowserAction]) -> Result<()> {

@@ -2,6 +2,7 @@ pub mod browser_action;
 pub mod clipboard;
 pub mod config;
 pub mod desktop;
+pub mod dirs;
 pub mod history;
 pub mod hotkey;
 pub mod icon_resolver;

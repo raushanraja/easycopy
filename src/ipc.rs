@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::dirs::Directories;
 use crate::history::ClipItem;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 /// Default path to the daemon's IPC socket.
 pub fn socket_path() -> PathBuf {
-    Config::data_dir().join("daemon.sock")
+    Directories::data_dir().join("daemon.sock")
 }
 
 /// Start the IPC server in a background thread.  Returns a receiver

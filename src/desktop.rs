@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::dirs::Directories;
 use crate::parser::parse_desktop_file;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -30,11 +30,11 @@ pub fn load_desktop_apps() -> Vec<DesktopApp> {
 
 /// Path to the cached desktop apps JSON file.
 fn apps_cache_path() -> PathBuf {
-    Config::data_dir().join("apps_cache.json")
+    Directories::data_dir().join("apps_cache.json")
 }
 
 fn app_usage_path() -> PathBuf {
-    Config::data_dir().join("app_usage.json")
+    Directories::data_dir().join("app_usage.json")
 }
 
 fn app_usage_key(app: &DesktopApp) -> String {
