@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, FontPreset, FontSize, FontWeight, Theme};
 use egui;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -289,14 +289,14 @@ impl ThemeColors {
 
     /// Return the theme palette based on config, or `None` if theming is disabled.
     pub fn from_config(config: &Config) -> Option<Self> {
-        if !config.general.enable_theming {
+        if !config.general.enable_theming() {
             return None;
         }
-        Some(match config.general.theme.as_str() {
-            "light" => Self::light(),
-            "nord" => Self::nord(),
-            "catppuccin" => Self::catppuccin(),
-            "dracula" => Self::dracula(),
+        Some(match config.general.theme() {
+            Theme::Light => Self::light(),
+            Theme::Nord => Self::nord(),
+            Theme::Catppuccin => Self::catppuccin(),
+            Theme::Dracula => Self::dracula(),
             _ => Self::dark(),
         })
     }
@@ -305,11 +305,11 @@ impl ThemeColors {
 // ── egui theming ─────────────────────────────────────────────────
 
 /// Font size values for each preset.
-fn font_size_values(size: &str) -> (f32, f32, f32, f32, f32) {
+fn font_size_values(size: FontSize) -> (f32, f32, f32, f32, f32) {
     match size {
-        "small" => (19.0, 13.0, 11.5, 10.0, 12.0),
-        "large" => (25.0, 19.0, 17.5, 16.0, 18.0),
-        _ => (22.0, 16.0, 14.5, 13.0, 15.0), // medium
+        FontSize::Small => (19.0, 13.0, 11.5, 10.0, 12.0),
+        FontSize::Large => (25.0, 19.0, 17.5, 16.0, 18.0),
+        FontSize::Medium => (22.0, 16.0, 14.5, 13.0, 15.0),
     }
 }
 
@@ -522,23 +522,80 @@ fn resolve_font_paths(preset: &str, weight: &str) -> (Option<String>, Option<Str
     }
 }
 
+// ── Typed enum helpers ─────────────────────────────────────────────
+// These live here (in ui/theme) rather than config/ to avoid a cyclic
+// dependency: ui/theme defines ThemeColors, and Theme::resolve() returns it.
+
+impl Theme {
+    /// Resolve to the concrete palette for this theme.
+    /// `System` falls back to light mode here; actual OS detection
+    /// happens in `apply_theme_and_fonts` via egui::Visuals::light()/dark().
+    pub fn resolve(self) -> ThemeColors {
+        match self {
+            Theme::Light => ThemeColors::light(),
+            Theme::Nord => ThemeColors::nord(),
+            Theme::Catppuccin => ThemeColors::catppuccin(),
+            Theme::Dracula => ThemeColors::dracula(),
+            Theme::System => ThemeColors::light(),
+            _ => ThemeColors::dark(),
+        }
+    }
+
+    /// Returns `true` for non-dark themes (used for visuals toggle).
+    pub fn is_light(self) -> bool {
+        matches!(self, Theme::Light | Theme::System)
+    }
+}
+
+impl FontPreset {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FontPreset::Default => "default",
+            FontPreset::DejaVu => "dejavu",
+            FontPreset::Liberation => "liberation",
+            FontPreset::Fira => "fira",
+            FontPreset::JetBrains => "jetbrains",
+            FontPreset::Iosevka => "iosevka",
+        }
+    }
+}
+
+impl FontSize {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FontSize::Small => "small",
+            FontSize::Medium => "medium",
+            FontSize::Large => "large",
+        }
+    }
+}
+
+impl FontWeight {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FontWeight::Normal => "normal",
+            FontWeight::Bold => "bold",
+        }
+    }
+}
+
 /// Cache for font availability — scanned once, reused forever.
-static FONT_AVAILABILITY: OnceLock<HashMap<&'static str, bool>> = OnceLock::new();
+static FONT_AVAILABILITY: OnceLock<HashMap<FontPreset, bool>> = OnceLock::new();
 
 /// Check whether a font preset has at least one font file available on this system.
 /// Uses "Regular" weight for the probe since we only need to know if the font exists.
 /// Results are cached after the first call.
-pub fn is_font_preset_available(preset: &str) -> bool {
+pub fn is_font_preset_available(preset: FontPreset) -> bool {
     let map = FONT_AVAILABILITY.get_or_init(|| {
         let mut m = HashMap::new();
-        m.insert("default", true);
-        for &p in &["dejavu", "liberation", "fira", "jetbrains", "iosevka"] {
-            let (prop, mono) = resolve_font_paths(p, "normal");
+        m.insert(FontPreset::Default, true);
+        for &p in &[FontPreset::DejaVu, FontPreset::Liberation, FontPreset::Fira, FontPreset::JetBrains, FontPreset::Iosevka] {
+            let (prop, mono) = resolve_font_paths(p.as_str(), "normal");
             m.insert(p, prop.is_some() || mono.is_some());
         }
         m
     });
-    map.get(preset).copied().unwrap_or(true)
+    map.get(&preset).copied().unwrap_or(true)
 }
 
 /// Log font diagnostic info (only when debug logging is enabled).
@@ -560,30 +617,30 @@ fn log_font_diag(preset: &str, prop: &Option<String>, mono: &Option<String>) {
 
 /// Load custom font files into the egui context based on the config.
 pub fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
-    let preset = config.general.font_preset.as_str();
+    let preset = config.general.font_preset().as_str();
     if preset == "default"
-        && config.general.font_proportional_path.is_empty()
-        && config.general.font_monospace_path.is_empty()
+        && config.general.font_proportional_path().is_empty()
+        && config.general.font_monospace_path().is_empty()
     {
         return;
     }
 
-    let weight = config.general.font_weight.as_str();
+    let weight = config.general.font_weight().as_str();
 
     // Use explicitly configured paths, or fall back to auto-detected ones
     let (auto_prop, auto_mono) = resolve_font_paths(preset, weight);
 
-    let prop_path = if !config.general.font_proportional_path.is_empty() {
+    let prop_path = if !config.general.font_proportional_path().is_empty() {
         Some(std::path::PathBuf::from(
-            &config.general.font_proportional_path,
+            config.general.font_proportional_path(),
         ))
     } else {
         auto_prop.map(std::path::PathBuf::from)
     };
 
-    let mono_path = if !config.general.font_monospace_path.is_empty() {
+    let mono_path = if !config.general.font_monospace_path().is_empty() {
         Some(std::path::PathBuf::from(
-            &config.general.font_monospace_path,
+            config.general.font_monospace_path(),
         ))
     } else {
         auto_mono.map(std::path::PathBuf::from)
@@ -635,16 +692,16 @@ pub fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
 /// Apply the configured theme, fonts, and font sizes to the egui context.
 pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
     // --- Theme visuals ---
-    if config.general.enable_theming {
-        let colors = match config.general.theme.as_str() {
-            "light" => ThemeColors::light(),
-            "nord" => ThemeColors::nord(),
-            "catppuccin" => ThemeColors::catppuccin(),
-            "dracula" => ThemeColors::dracula(),
+    if config.general.enable_theming() {
+        let colors = match config.general.theme() {
+            Theme::Light => ThemeColors::light(),
+            Theme::Nord => ThemeColors::nord(),
+            Theme::Catppuccin => ThemeColors::catppuccin(),
+            Theme::Dracula => ThemeColors::dracula(),
             _ => ThemeColors::dark(),
         };
 
-        let mut visuals = if config.general.theme == "light" {
+        let mut visuals = if config.general.theme().is_light() {
             egui::Visuals::light()
         } else {
             egui::Visuals::dark()
@@ -663,7 +720,7 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
 
         visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
-        let fg_hover = if config.general.theme == "light" {
+        let fg_hover = if config.general.theme().is_light() {
             egui::Color32::BLACK
         } else {
             egui::Color32::WHITE
@@ -680,7 +737,7 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
 
     // --- Font sizes ---
     let (h_size, b_size, btn_size, s_size, m_size) =
-        font_size_values(config.general.font_size.as_str());
+        font_size_values(config.general.font_size());
 
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);

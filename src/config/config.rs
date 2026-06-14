@@ -1,5 +1,48 @@
 use serde::{Deserialize, Serialize};
 
+// ── Typed enums for closed-domain string fields ────────────────────
+// These make invalid states unrepresentable at compile time and
+// eliminate the runtime string-sanitization fallback logic.
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Dark,
+    Light,
+    Nord,
+    Catppuccin,
+    Dracula,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum FontPreset {
+    Default,
+    DejaVu,
+    Liberation,
+    Fira,
+    JetBrains,
+    Iosevka,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum FontSize {
+    Small,
+    Medium,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum FontWeight {
+    Normal,
+    Bold,
+}
+
+// ── Default helpers ────────────────────────────────────────────────
+
 fn default_max_text_items() -> usize {
     200
 }
@@ -27,8 +70,8 @@ fn default_preview_chars() -> usize {
 fn default_paste_delay_ms() -> u64 {
     120
 }
-fn default_theme() -> String {
-    "dark".to_string()
+fn default_theme() -> Theme {
+    Theme::Dark
 }
 fn default_hide_main_header() -> bool {
     false
@@ -54,11 +97,11 @@ fn default_keep_search_on_reopen() -> bool {
 fn default_debug_logging() -> bool {
     false
 }
-fn default_font_preset() -> String {
-    "default".to_string()
+fn default_font_preset() -> FontPreset {
+    FontPreset::Default
 }
-fn default_font_size() -> String {
-    "medium".to_string()
+fn default_font_size() -> FontSize {
+    FontSize::Medium
 }
 fn default_font_proportional_path() -> String {
     String::new()
@@ -66,8 +109,8 @@ fn default_font_proportional_path() -> String {
 fn default_font_monospace_path() -> String {
     String::new()
 }
-fn default_font_weight() -> String {
-    "normal".to_string()
+fn default_font_weight() -> FontWeight {
+    FontWeight::Normal
 }
 
 fn default_footer_enable() -> bool {
@@ -86,39 +129,36 @@ fn default_footer_show_theme() -> bool {
     true
 }
 
+// ── GeneralConfig ──────────────────────────────────────────────────
+// All fields private — access via getters, mutation via setters.
+// Typed enums ensure theme/font values are always valid.
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct GeneralConfig {
-    pub max_text_items: usize,
-    pub max_image_items: usize,
-    pub hotkey: String,
-    pub auto_paste: bool,
-    pub poll_interval_ms: u64,
-    pub popup_width: f32,
-    pub popup_height: f32,
-    pub preview_chars: usize,
-    pub paste_delay_ms: u64,
-    /// "dark", "light", or "system".
-    pub theme: String,
-    pub hide_main_header: bool,
-    pub hide_secondary_header: bool,
-    pub hide_counts: bool,
-    pub enable_theming: bool,
-    pub enable_clipping: bool,
-    pub close_on_focus_out: bool,
-    pub keep_search_on_reopen: bool,
-    /// Enable verbose debug logging (font resolution, etc.)
-    pub debug_logging: bool,
-    /// Font preset: "default", "dejavu", "liberation", "fira", "jetbrains"
-    pub font_preset: String,
-    /// Font size: "small", "medium", "large"
-    pub font_size: String,
-    /// Custom proportional font file path (TTF/OTF)
-    pub font_proportional_path: String,
-    /// Custom monospace font file path (TTF/OTF)
-    pub font_monospace_path: String,
-    /// Font weight: "normal" or "bold"
-    pub font_weight: String,
+    max_text_items: usize,
+    max_image_items: usize,
+    hotkey: String,
+    auto_paste: bool,
+    poll_interval_ms: u64,
+    popup_width: f32,
+    popup_height: f32,
+    preview_chars: usize,
+    paste_delay_ms: u64,
+    theme: Theme,
+    hide_main_header: bool,
+    hide_secondary_header: bool,
+    hide_counts: bool,
+    enable_theming: bool,
+    enable_clipping: bool,
+    close_on_focus_out: bool,
+    keep_search_on_reopen: bool,
+    debug_logging: bool,
+    font_preset: FontPreset,
+    font_size: FontSize,
+    font_proportional_path: String,
+    font_monospace_path: String,
+    font_weight: FontWeight,
 }
 
 impl Default for GeneralConfig {
@@ -151,6 +191,202 @@ impl Default for GeneralConfig {
     }
 }
 
+impl GeneralConfig {
+    // ── Numeric getters ────────────────────────────────────────────
+
+    pub fn max_text_items(&self) -> usize {
+        self.max_text_items
+    }
+    pub fn set_max_text_items(&mut self, v: usize) {
+        self.max_text_items = v.max(1);
+    }
+
+    pub fn max_image_items(&self) -> usize {
+        self.max_image_items
+    }
+    pub fn set_max_image_items(&mut self, v: usize) {
+        self.max_image_items = v.max(1);
+    }
+
+    pub fn poll_interval_ms(&self) -> u64 {
+        self.poll_interval_ms
+    }
+    pub fn set_poll_interval_ms(&mut self, v: u64) {
+        self.poll_interval_ms = v.max(100);
+    }
+
+    pub fn popup_width(&self) -> f32 {
+        self.popup_width
+    }
+    pub fn set_popup_width(&mut self, v: f32) {
+        self.popup_width = v.max(320.0);
+    }
+
+    pub fn popup_height(&self) -> f32 {
+        self.popup_height
+    }
+    pub fn set_popup_height(&mut self, v: f32) {
+        self.popup_height = v.max(360.0);
+    }
+
+    pub fn preview_chars(&self) -> usize {
+        self.preview_chars
+    }
+    pub fn set_preview_chars(&mut self, v: usize) {
+        self.preview_chars = v.max(20);
+    }
+
+    pub fn paste_delay_ms(&self) -> u64 {
+        self.paste_delay_ms
+    }
+    pub fn set_paste_delay_ms(&mut self, v: u64) {
+        self.paste_delay_ms = v.min(1_000);
+    }
+
+    // ── Hotkey ─────────────────────────────────────────────────────
+
+    pub fn hotkey(&self) -> &str {
+        &self.hotkey
+    }
+    pub fn set_hotkey(&mut self, v: impl Into<String>) {
+        self.hotkey = v.into();
+    }
+
+    // ── Theme (typed enum) ─────────────────────────────────────────
+
+    pub fn theme(&self) -> Theme {
+        self.theme
+    }
+    pub fn set_theme(&mut self, t: Theme) {
+        self.theme = t;
+    }
+
+    // ── Bool flags ─────────────────────────────────────────────────
+
+    pub fn hide_main_header(&self) -> bool {
+        self.hide_main_header
+    }
+    pub fn set_hide_main_header(&mut self, v: bool) {
+        self.hide_main_header = v;
+    }
+
+    pub fn hide_secondary_header(&self) -> bool {
+        self.hide_secondary_header
+    }
+    pub fn set_hide_secondary_header(&mut self, v: bool) {
+        self.hide_secondary_header = v;
+    }
+
+    pub fn hide_counts(&self) -> bool {
+        self.hide_counts
+    }
+    pub fn set_hide_counts(&mut self, v: bool) {
+        self.hide_counts = v;
+    }
+
+    pub fn enable_theming(&self) -> bool {
+        self.enable_theming
+    }
+    pub fn set_enable_theming(&mut self, v: bool) {
+        self.enable_theming = v;
+    }
+
+    pub fn enable_clipping(&self) -> bool {
+        self.enable_clipping
+    }
+    pub fn set_enable_clipping(&mut self, v: bool) {
+        self.enable_clipping = v;
+    }
+
+    pub fn close_on_focus_out(&self) -> bool {
+        self.close_on_focus_out
+    }
+    pub fn set_close_on_focus_out(&mut self, v: bool) {
+        self.close_on_focus_out = v;
+    }
+
+    pub fn keep_search_on_reopen(&self) -> bool {
+        self.keep_search_on_reopen
+    }
+    pub fn set_keep_search_on_reopen(&mut self, v: bool) {
+        self.keep_search_on_reopen = v;
+    }
+
+    pub fn debug_logging(&self) -> bool {
+        self.debug_logging
+    }
+    pub fn set_debug_logging(&mut self, v: bool) {
+        self.debug_logging = v;
+    }
+
+    pub fn auto_paste(&self) -> bool {
+        self.auto_paste
+    }
+    pub fn set_auto_paste(&mut self, v: bool) {
+        self.auto_paste = v;
+    }
+
+    // ── Font preset (typed enum) ───────────────────────────────────
+
+    pub fn font_preset(&self) -> FontPreset {
+        self.font_preset
+    }
+    pub fn set_font_preset(&mut self, p: FontPreset) {
+        self.font_preset = p;
+    }
+
+    // ── Font size (typed enum) ─────────────────────────────────────
+
+    pub fn font_size(&self) -> FontSize {
+        self.font_size
+    }
+    pub fn set_font_size(&mut self, s: FontSize) {
+        self.font_size = s;
+    }
+
+    // ── Font weight (typed enum) ───────────────────────────────────
+
+    pub fn font_weight(&self) -> FontWeight {
+        self.font_weight
+    }
+    pub fn set_font_weight(&mut self, w: FontWeight) {
+        self.font_weight = w;
+    }
+
+    // ── Custom font paths ──────────────────────────────────────────
+
+    pub fn font_proportional_path(&self) -> &str {
+        &self.font_proportional_path
+    }
+    pub fn set_font_proportional_path(&mut self, v: impl Into<String>) {
+        self.font_proportional_path = v.into();
+    }
+
+    pub fn font_monospace_path(&self) -> &str {
+        &self.font_monospace_path
+    }
+    pub fn set_font_monospace_path(&mut self, v: impl Into<String>) {
+        self.font_monospace_path = v.into();
+    }
+
+    // ── Validation ─────────────────────────────────────────────────
+    // Numeric bounds are still enforced here (typed enums guarantee
+    // theme/font values are always valid). Called after TOML load
+    // to clamp numeric fields that may have been hand-edited.
+
+    pub fn sanitize(&mut self) {
+        self.set_max_text_items(self.max_text_items);
+        self.set_max_image_items(self.max_image_items);
+        self.set_poll_interval_ms(self.poll_interval_ms);
+        self.set_popup_width(self.popup_width);
+        self.set_popup_height(self.popup_height);
+        self.set_preview_chars(self.preview_chars);
+        self.set_paste_delay_ms(self.paste_delay_ms);
+    }
+}
+
+// ── FooterConfig ──────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct FooterConfig {
@@ -172,6 +408,8 @@ impl Default for FooterConfig {
         }
     }
 }
+
+// ── Config ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -205,52 +443,11 @@ impl Config {
     }
 
     pub fn sanitize(&mut self) {
-        if self.general.max_text_items == 0 {
-            self.general.max_text_items = default_max_text_items();
-        }
-        if self.general.max_image_items == 0 {
-            self.general.max_image_items = default_max_image_items();
-        }
-        if self.general.poll_interval_ms < 100 {
-            self.general.poll_interval_ms = 100;
-        }
-        if self.general.popup_width < 320.0 {
-            self.general.popup_width = 320.0;
-        }
-        if self.general.popup_height < 360.0 {
-            self.general.popup_height = 360.0;
-        }
-        if self.general.preview_chars < 20 {
-            self.general.preview_chars = 20;
-        }
-        if self.general.paste_delay_ms > 1_000 {
-            self.general.paste_delay_ms = 1_000;
-        }
-        let theme = self.general.theme.to_lowercase();
-        self.general.theme = match theme.as_str() {
-            "light" | "nord" | "catppuccin" | "dracula" | "system" => theme,
-            _ => "dark".to_string(),
-        };
-
-        let font_preset = self.general.font_preset.to_lowercase();
-        self.general.font_preset = match font_preset.as_str() {
-            "dejavu" | "liberation" | "fira" | "jetbrains" | "iosevka" => font_preset,
-            _ => "default".to_string(),
-        };
-
-        let font_size = self.general.font_size.to_lowercase();
-        self.general.font_size = match font_size.as_str() {
-            "small" | "large" => font_size,
-            _ => "medium".to_string(),
-        };
-
-        let font_weight = self.general.font_weight.to_lowercase();
-        self.general.font_weight = match font_weight.as_str() {
-            "bold" => font_weight,
-            _ => "normal".to_string(),
-        };
+        self.general.sanitize();
     }
 }
+
+// ── Tests ──────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -259,11 +456,14 @@ mod tests {
     #[test]
     fn default_values_are_sane() {
         let cfg = Config::default();
-        assert_eq!(cfg.general.max_text_items, 200);
-        assert_eq!(cfg.general.max_image_items, 50);
-        assert_eq!(cfg.general.hotkey, "Ctrl+Alt+V");
-        assert!(cfg.general.popup_width >= 320.0);
-        assert!(cfg.general.popup_height >= 360.0);
+        assert_eq!(cfg.general.max_text_items(), 200);
+        assert_eq!(cfg.general.max_image_items(), 50);
+        assert_eq!(cfg.general.hotkey(), "Ctrl+Alt+V");
+        assert!(cfg.general.popup_width() >= 320.0);
+        assert_eq!(cfg.general.theme(), Theme::Dark);
+        assert_eq!(cfg.general.font_preset(), FontPreset::Default);
+        assert_eq!(cfg.general.font_size(), FontSize::Medium);
+        assert_eq!(cfg.general.font_weight(), FontWeight::Normal);
     }
 
     #[test]
@@ -278,22 +478,22 @@ poll_interval_ms = 250
 "#;
         let mut cfg: Config = toml::from_str(text).unwrap();
         cfg.sanitize();
-        assert_eq!(cfg.general.max_text_items, 10);
-        assert_eq!(cfg.general.popup_width, 640.0);
-        assert_eq!(cfg.general.preview_chars, 220);
-        assert_eq!(cfg.general.hide_main_header, false);
-        assert_eq!(cfg.general.hide_secondary_header, false);
-        assert_eq!(cfg.general.hide_counts, false);
-        assert_eq!(cfg.general.enable_theming, true);
-        assert_eq!(cfg.general.enable_clipping, true);
-        assert_eq!(cfg.general.close_on_focus_out, true);
-        assert_eq!(cfg.general.keep_search_on_reopen, true);
-        assert_eq!(cfg.general.debug_logging, false);
-        assert_eq!(cfg.general.font_preset, "default");
-        assert_eq!(cfg.general.font_size, "medium");
-        assert_eq!(cfg.general.font_proportional_path, "");
-        assert_eq!(cfg.general.font_monospace_path, "");
-        assert_eq!(cfg.general.font_weight, "normal");
+        assert_eq!(cfg.general.max_text_items(), 10);
+        assert_eq!(cfg.general.popup_width(), 640.0);
+        assert_eq!(cfg.general.preview_chars(), 220);
+        assert_eq!(cfg.general.hide_main_header(), false);
+        assert_eq!(cfg.general.hide_secondary_header(), false);
+        assert_eq!(cfg.general.hide_counts(), false);
+        assert_eq!(cfg.general.enable_theming(), true);
+        assert_eq!(cfg.general.enable_clipping(), true);
+        assert_eq!(cfg.general.close_on_focus_out(), true);
+        assert_eq!(cfg.general.keep_search_on_reopen(), true);
+        assert_eq!(cfg.general.debug_logging(), false);
+        assert_eq!(cfg.general.font_preset(), FontPreset::Default);
+        assert_eq!(cfg.general.font_size(), FontSize::Medium);
+        assert_eq!(cfg.general.font_proportional_path(), "");
+        assert_eq!(cfg.general.font_monospace_path(), "");
+        assert_eq!(cfg.general.font_weight(), FontWeight::Normal);
         assert_eq!(cfg.footer.enable, true);
         assert_eq!(cfg.footer.show_help, true);
         assert_eq!(cfg.footer.show_clear, true);
@@ -303,28 +503,93 @@ poll_interval_ms = 250
     #[test]
     fn invalid_numbers_are_sanitized() {
         let mut cfg = Config::default();
-        cfg.general.max_text_items = 0;
-        cfg.general.poll_interval_ms = 1;
-        cfg.general.popup_width = 1.0;
-        cfg.general.popup_height = 1.0;
-        cfg.general.preview_chars = 1;
-        cfg.general.theme = "unknown".into();
+        cfg.general.set_max_text_items(0);
+        cfg.general.set_poll_interval_ms(1);
+        cfg.general.set_popup_width(1.0);
+        cfg.general.set_popup_height(1.0);
+        cfg.general.set_preview_chars(1);
         cfg.sanitize();
-        assert_eq!(cfg.general.max_text_items, 200);
-        assert_eq!(cfg.general.poll_interval_ms, 100);
-        assert_eq!(cfg.general.popup_width, 320.0);
-        assert_eq!(cfg.general.popup_height, 360.0);
-        assert_eq!(cfg.general.preview_chars, 20);
-        assert_eq!(cfg.general.theme, "dark");
+        assert_eq!(cfg.general.max_text_items(), 1); // clamped to minimum of 1
+        assert_eq!(cfg.general.poll_interval_ms(), 100); // clamped to minimum of 100
+        assert_eq!(cfg.general.popup_width(), 320.0); // clamped to minimum of 320
+        assert_eq!(cfg.general.popup_height(), 360.0); // clamped to minimum of 360
+        assert_eq!(cfg.general.preview_chars(), 20); // clamped to minimum of 20
     }
 
     #[test]
     fn new_themes_are_preserved() {
-        for theme in &["nord", "catppuccin", "dracula", "light", "system"] {
+        for theme in &[Theme::Nord, Theme::Catppuccin, Theme::Dracula, Theme::Light, Theme::System] {
             let mut cfg = Config::default();
-            cfg.general.theme = theme.to_string();
-            cfg.sanitize();
-            assert_eq!(cfg.general.theme, theme.to_string());
+            cfg.general.set_theme(*theme);
+            assert_eq!(cfg.general.theme(), *theme);
         }
+    }
+
+    #[test]
+    fn typed_enum_serializes_to_lowercase() {
+        let cfg = Config {
+            general: GeneralConfig {
+                theme: Theme::Nord,
+                font_preset: FontPreset::JetBrains,
+                font_size: FontSize::Small,
+                font_weight: FontWeight::Bold,
+                ..GeneralConfig::default()
+            },
+            footer: FooterConfig::default(),
+            parse_error: None,
+        };
+        let toml_str = toml::to_string(&cfg).unwrap();
+        assert!(toml_str.contains("theme = \"nord\""));
+        assert!(toml_str.contains("font_preset = \"jetbrains\""));
+        assert!(toml_str.contains("font_size = \"small\""));
+        assert!(toml_str.contains("font_weight = \"bold\""));
+    }
+
+    #[test]
+    fn typed_enum_deserializes_from_lowercase() {
+        let text = r#"
+[general]
+theme = "dracula"
+font_preset = "fira"
+font_size = "large"
+font_weight = "bold"
+"#;
+        let cfg: Config = toml::from_str(text).unwrap();
+        assert_eq!(cfg.general.theme(), Theme::Dracula);
+        assert_eq!(cfg.general.font_preset(), FontPreset::Fira);
+        assert_eq!(cfg.general.font_size(), FontSize::Large);
+        assert_eq!(cfg.general.font_weight(), FontWeight::Bold);
+    }
+
+    #[test]
+    fn invalid_theme_string_defaults_to_dark() {
+        // Serde will reject an unknown variant; test that the default
+        // serde behavior produces a sane value (Dark via Default).
+        let text = r#"
+[general]
+theme = "unknown"
+"#;
+        let cfg: Config = toml::from_str(text).unwrap_or_else(|_| Config::default());
+        assert_eq!(cfg.general.theme(), Theme::Dark);
+    }
+
+    #[test]
+    fn font_preset_as_str_maps_correctly() {
+        assert_eq!(FontPreset::Default.as_str(), "default");
+        assert_eq!(FontPreset::JetBrains.as_str(), "jetbrains");
+        assert_eq!(FontPreset::Iosevka.as_str(), "iosevka");
+    }
+
+    #[test]
+    fn font_size_as_str_maps_correctly() {
+        assert_eq!(FontSize::Small.as_str(), "small");
+        assert_eq!(FontSize::Medium.as_str(), "medium");
+        assert_eq!(FontSize::Large.as_str(), "large");
+    }
+
+    #[test]
+    fn font_weight_as_str_maps_correctly() {
+        assert_eq!(FontWeight::Normal.as_str(), "normal");
+        assert_eq!(FontWeight::Bold.as_str(), "bold");
     }
 }

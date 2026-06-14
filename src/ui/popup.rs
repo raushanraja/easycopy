@@ -1,6 +1,6 @@
 use crate::browser::action::{BrowserAction, QueryMode};
 use crate::clipboard::cache::ClipCache;
-use crate::config::Config;
+use crate::config::{Config, FontPreset, FontSize, FontWeight, Theme};
 use crate::launcher::DesktopApp;
 use crate::clipboard::history::ClipItem;
 use crate::store::images::ImageStore;
@@ -29,8 +29,8 @@ const FOOTER_HELP: &str =
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
 /// the user chooses an item.
 pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
-    let width = config.general.popup_width;
-    let height = config.general.popup_height;
+    let width = config.general.popup_width();
+    let height = config.general.popup_height();
     let image_store = store.images();
     let image_store_for_paste = image_store.clone();
 
@@ -45,10 +45,10 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
     };
 
     let should_paste_after_window = should_paste.clone();
-    let auto_paste = config.general.auto_paste;
-    let paste_delay_ms = config.general.paste_delay_ms;
+    let auto_paste = config.general.auto_paste();
+    let paste_delay_ms = config.general.paste_delay_ms();
 
-    theme::set_debug_logging(config.general.debug_logging);
+    theme::set_debug_logging(config.general.debug_logging());
 
     let selected_item = Arc::new(std::sync::Mutex::new(None));
     let selected_item_for_app = selected_item.clone();
@@ -198,7 +198,7 @@ impl PopupApp {
 
         // History load + cache computation thread
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
-        let preview_chars = config.general.preview_chars;
+        let preview_chars = config.general.preview_chars();
         let store_for_history = store.clone();
         std::thread::spawn(move || {
             let clips: Vec<ClipItem> = store_for_history.load_history().into_iter().collect();
@@ -310,7 +310,7 @@ impl PopupApp {
             icon_loading: HashSet::new(),
             should_paste,
             selected_item_out,
-            preview_chars: config.general.preview_chars,
+            preview_chars: config.general.preview_chars(),
             focus_search_once: true,
             scroll_to_selected_once: false,
             config,
@@ -634,8 +634,8 @@ impl PopupApp {
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
-        let show_main = !self.config.general.hide_main_header;
-        let show_sec = !self.config.general.hide_secondary_header;
+        let show_main = !self.config.general.hide_main_header();
+        let show_sec = !self.config.general.hide_secondary_header();
 
         if !show_main && !show_sec {
             return;
@@ -664,7 +664,7 @@ impl PopupApp {
 
     fn draw_search(&mut self, ui: &mut egui::Ui) {
         let has_no_header =
-            self.config.general.hide_main_header && self.config.general.hide_secondary_header;
+            self.config.general.hide_main_header() && self.config.general.hide_secondary_header();
         let top_margin = if has_no_header { 18.0 } else { 8.0 };
 
         egui::Frame::none()
@@ -676,7 +676,7 @@ impl PopupApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let show_counts = !self.config.general.hide_counts;
+                    let show_counts = !self.config.general.hide_counts();
 
                     let count_width = if show_counts {
                         let clips_digits = self.clips.len().to_string().chars().count();
@@ -1098,9 +1098,15 @@ impl PopupApp {
                                         ),
                                     );
                                     ui.separator();
-                                    let themes = ["dark", "light", "nord", "catppuccin", "dracula"];
-                                    for t_name in &themes {
-                                        let selected = self.config.general.theme == *t_name;
+                                    let themes = [
+                                        (Theme::Dark, "Dark"),
+                                        (Theme::Light, "Light"),
+                                        (Theme::Nord, "Nord"),
+                                        (Theme::Catppuccin, "Catppuccin"),
+                                        (Theme::Dracula, "Dracula"),
+                                    ];
+                                    for (t_enum, t_name) in &themes {
+                                        let selected = self.config.general.theme() == *t_enum;
                                         let fg = if selected {
                                             egui::Color32::WHITE
                                         } else {
@@ -1115,7 +1121,7 @@ impl PopupApp {
                                             fg,
                                             self.theme_colors.as_ref(),
                                         ) {
-                                            self.config.general.theme = t_name.to_string();
+                                            self.config.general.set_theme(*t_enum);
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                                             self.theme_colors =
                                                 ThemeColors::from_config(&self.config);
@@ -1137,29 +1143,21 @@ impl PopupApp {
                                     );
                                     ui.separator();
                                     let font_presets = [
-                                        "default",
-                                        "dejavu",
-                                        "liberation",
-                                        "fira",
-                                        "jetbrains",
-                                        "iosevka",
+                                        (FontPreset::Default, "System Default"),
+                                        (FontPreset::DejaVu, "DejaVu"),
+                                        (FontPreset::Liberation, "Liberation"),
+                                        (FontPreset::Fira, "Fira Code"),
+                                        (FontPreset::JetBrains, "JetBrains Mono"),
+                                        (FontPreset::Iosevka, "Iosevka"),
                                     ];
-                                    let display_names = [
-                                        "System Default",
-                                        "DejaVu",
-                                        "Liberation",
-                                        "Fira Code",
-                                        "JetBrains Mono",
-                                        "Iosevka",
-                                    ];
-                                    for (i, f_name) in font_presets.iter().enumerate() {
-                                        let available = f_name == &"default"
-                                            || theme::is_font_preset_available(f_name);
-                                        let selected = self.config.general.font_preset == *f_name;
+                                    for (f_enum, f_label) in &font_presets {
+                                        let available = *f_enum == FontPreset::Default
+                                            || theme::is_font_preset_available(*f_enum);
+                                        let selected = self.config.general.font_preset() == *f_enum;
                                         let label = if available {
-                                            display_names[i].to_string()
+                                            f_label.to_string()
                                         } else {
-                                            format!("{} (not installed)", display_names[i])
+                                            format!("{} (not installed)", f_label)
                                         };
                                         let fg = if selected {
                                             egui::Color32::WHITE
@@ -1180,8 +1178,7 @@ impl PopupApp {
                                             self.theme_colors.as_ref(),
                                         ) {
                                             if available || selected {
-                                                self.config.general.font_preset =
-                                                    f_name.to_string();
+                                                self.config.general.set_font_preset(*f_enum);
                                                 theme::apply_theme_and_fonts(
                                                     ui.ctx(),
                                                     &self.config,
@@ -1204,10 +1201,13 @@ impl PopupApp {
                                         ),
                                     );
                                     ui.separator();
-                                    let sizes = ["small", "medium", "large"];
-                                    let size_display = ["Small", "Medium", "Large"];
-                                    for (i, s_name) in sizes.iter().enumerate() {
-                                        let selected = self.config.general.font_size == *s_name;
+                                    let sizes = [
+                                        (FontSize::Small, "Small"),
+                                        (FontSize::Medium, "Medium"),
+                                        (FontSize::Large, "Large"),
+                                    ];
+                                    for (s_enum, s_label) in &sizes {
+                                        let selected = self.config.general.font_size() == *s_enum;
                                         let fg = if selected {
                                             egui::Color32::WHITE
                                         } else {
@@ -1217,12 +1217,12 @@ impl PopupApp {
                                         };
                                         if draw_item(
                                             ui,
-                                            size_display[i],
+                                            s_label,
                                             selected,
                                             fg,
                                             self.theme_colors.as_ref(),
                                         ) {
-                                            self.config.general.font_size = s_name.to_string();
+                                            self.config.general.set_font_size(*s_enum);
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                                             let _ = self.store.save_config(&self.config);
                                             ui.close_menu();
@@ -1241,10 +1241,12 @@ impl PopupApp {
                                         ),
                                     );
                                     ui.separator();
-                                    let weights = ["normal", "bold"];
-                                    let weight_display = ["Normal", "Bold"];
-                                    for (i, w_name) in weights.iter().enumerate() {
-                                        let selected = self.config.general.font_weight == *w_name;
+                                    let weights = [
+                                        (FontWeight::Normal, "Normal"),
+                                        (FontWeight::Bold, "Bold"),
+                                    ];
+                                    for (w_enum, w_label) in &weights {
+                                        let selected = self.config.general.font_weight() == *w_enum;
                                         let fg = if selected {
                                             egui::Color32::WHITE
                                         } else {
@@ -1254,12 +1256,12 @@ impl PopupApp {
                                         };
                                         if draw_item(
                                             ui,
-                                            weight_display[i],
+                                            w_label,
                                             selected,
                                             fg,
                                             self.theme_colors.as_ref(),
                                         ) {
-                                            self.config.general.font_weight = w_name.to_string();
+                                            self.config.general.set_font_weight(*w_enum);
                                             theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                                             let _ = self.store.save_config(&self.config);
                                             ui.close_menu();
@@ -1278,7 +1280,7 @@ impl PopupApp {
                                         ),
                                     );
                                     ui.separator();
-                                    let keep_search = self.config.general.keep_search_on_reopen;
+                                    let keep_search = self.config.general.keep_search_on_reopen();
                                     let fg = if keep_search {
                                         egui::Color32::WHITE
                                     } else {
@@ -1293,7 +1295,7 @@ impl PopupApp {
                                         fg,
                                         self.theme_colors.as_ref(),
                                     ) {
-                                        self.config.general.keep_search_on_reopen = !keep_search;
+                                        self.config.general.set_keep_search_on_reopen(!keep_search);
                                         let _ = self.store.save_config(&self.config);
                                     }
                                 },
@@ -1396,7 +1398,7 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming {
+                if is_selected && self.config.general.enable_theming() {
                     let bar_width = 4.0;
                     let bar_height = 24.0;
                     let bar_rect = egui::Rect::from_center_size(
@@ -1642,7 +1644,7 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming {
+                if is_selected && self.config.general.enable_theming() {
                     let bar_width = 4.0;
                     let bar_height = 24.0;
                     let bar_rect = egui::Rect::from_center_size(
@@ -1775,7 +1777,7 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming {
+                if is_selected && self.config.general.enable_theming() {
                     let bar_width = 4.0;
                     let bar_height = 24.0;
                     let bar_rect = egui::Rect::from_center_size(
@@ -2232,7 +2234,7 @@ impl eframe::App for PopupApp {
             }
         }
 
-        if self.config.general.close_on_focus_out {
+        if self.config.general.close_on_focus_out() {
             let focused = ctx.input(|i| i.focused);
             if focused {
                 self.focused_once = true;
