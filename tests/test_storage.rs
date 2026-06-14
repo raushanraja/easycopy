@@ -1,9 +1,12 @@
-use easycopy::history::ClipItem;
-use easycopy::storage;
+use easycopy::clipboard::history::ClipItem;
+use easycopy::config::dirs::Directories;
+use easycopy::store::history;
+use easycopy::store::ImageStore;
 use std::collections::VecDeque;
 
 #[test]
 fn index_json_roundtrip_through_storage_helpers() {
+    let dirs = Directories::discover();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("index.json");
 
@@ -22,8 +25,8 @@ fn index_json_roundtrip_through_storage_helpers() {
         use_count: 0,
     });
 
-    storage::save_history_to_path(&path, &items).unwrap();
-    let loaded = storage::load_history_from_path(&path).unwrap();
+    history::save_history_to_path(&dirs, &path, &items).unwrap();
+    let loaded = history::load_history_from_path(&dirs, &path).unwrap();
     assert_eq!(loaded.len(), 2);
 
     match &loaded[0] {
@@ -66,12 +69,13 @@ fn image_data_not_in_json() {
 #[test]
 fn image_png_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
+    let store = ImageStore::new_from_dir(dir.path().to_path_buf());
     let w = 4u32;
     let h = 4u32;
     let data = vec![255u8, 0, 0, 255].repeat((w * h) as usize);
 
-    let filename = storage::save_image_to_dir(dir.path(), &data, w, h).unwrap();
-    let (loaded_w, loaded_h, loaded) = storage::load_image_from_dir(dir.path(), &filename).unwrap();
+    let filename = store.save(&data, w, h).unwrap();
+    let (loaded_w, loaded_h, loaded) = store.load(&filename).unwrap();
 
     assert_eq!((loaded_w, loaded_h), (w, h));
     assert_eq!(loaded.len(), (w * h * 4) as usize);
@@ -80,6 +84,7 @@ fn image_png_roundtrip() {
 #[test]
 fn orphan_cleanup_removes_unused_files() {
     let dir = tempfile::tempdir().unwrap();
+    let store = ImageStore::new_from_dir(dir.path().to_path_buf());
     std::fs::write(dir.path().join("used.png"), b"used").unwrap();
     std::fs::write(dir.path().join("unused.png"), b"unused").unwrap();
 
@@ -93,7 +98,7 @@ fn orphan_cleanup_removes_unused_files() {
         use_count: 0,
     });
 
-    let removed = storage::cleanup_orphaned_in_dir(dir.path(), &items).unwrap();
+    let removed = store.cleanup_orphaned(&items).unwrap();
     assert_eq!(removed, 1);
     assert!(dir.path().join("used.png").exists());
     assert!(!dir.path().join("unused.png").exists());
@@ -102,12 +107,13 @@ fn orphan_cleanup_removes_unused_files() {
 #[test]
 fn image_thumbnail_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
+    let store = ImageStore::new_from_dir(dir.path().to_path_buf());
     let w = 10u32;
     let h = 10u32;
     let data = vec![0u8; (w * h * 4) as usize];
 
     // 1. Saving creates the main file and the thumbnail
-    let filename = storage::save_image_to_dir(dir.path(), &data, w, h).unwrap();
+    let filename = store.save(&data, w, h).unwrap();
     let filepath = dir.path().join(&filename);
     let thumb_filepath = dir.path().join(format!("thumb_{}", filename));
 
@@ -115,7 +121,7 @@ fn image_thumbnail_lifecycle() {
     assert!(thumb_filepath.exists());
 
     // 2. Deleting deletes both
-    storage::delete_image_file_in_dir(dir.path(), &filename).unwrap();
+    store.delete(&filename);
     assert!(!filepath.exists());
     assert!(!thumb_filepath.exists());
 }

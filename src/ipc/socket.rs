@@ -1,14 +1,14 @@
-use crate::config::Config;
-use crate::history::ClipItem;
+use crate::clipboard::history::ClipItem;
+use crate::store::Store;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
 /// Default path to the daemon's IPC socket.
-pub fn socket_path() -> PathBuf {
-    Config::data_dir().join("daemon.sock")
+pub fn socket_path(store: &Store) -> std::path::PathBuf {
+    store.data_dir().join("daemon.sock")
 }
 
 /// Start the IPC server in a background thread.  Returns a receiver
@@ -56,8 +56,8 @@ pub fn start_server(socket: &Path) -> std::io::Result<mpsc::Receiver<ClipItem>> 
 /// Send a paste request to the daemon via the IPC socket.
 /// Returns `Ok(())` if the request was successfully sent,
 /// or an error if the daemon socket is not available.
-pub fn send_paste_request(item: &ClipItem) -> std::io::Result<()> {
-    let path = socket_path();
+pub fn send_paste_request(store: &Store, item: &ClipItem) -> std::io::Result<()> {
+    let path = socket_path(store);
     let mut stream = UnixStream::connect(&path)?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     let json =

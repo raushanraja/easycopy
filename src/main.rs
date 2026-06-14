@@ -1,17 +1,20 @@
+use easycopy::clipboard::ClipboardMonitor;
+use easycopy::clipboard::x11::{SelectionEvent, X11Watcher};
+use easycopy::config::dirs::Directories;
+use easycopy::clipboard::history::{ClipItem, HistoryManager};
+use easycopy::hotkey::parse_hotkey;
+use easycopy::ipc;
+use easycopy::launcher::desktop;
+use easycopy::store::ImageStore;
+use easycopy::store::Store;
+use easycopy::ui::popup;
+use easycopy::ui::theme;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use easycopy::clipboard::ClipboardMonitor;
-use easycopy::config::Config;
-use easycopy::history::{ClipItem, HistoryManager};
-use easycopy::hotkey::parse_hotkey;
-use easycopy::ipc;
-use easycopy::popup;
-use easycopy::storage;
-use easycopy::theme;
-use easycopy::x11_clipboard::{SelectionEvent, X11Watcher};
+const HISTORY_SAVE_INTERVAL: Duration = Duration::from_secs(1);
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -27,22 +30,27 @@ fn main() {
 // ── commands ───────────────────────────────────────────────────────
 
 fn cmd_popup() {
-    let config = Config::load();
+    let dirs = Directories::discover();
+    let store = Store::new(dirs);
+    let config = store.load_config();
     let should_paste = Arc::new(AtomicBool::new(false));
-    popup::run_popup(config, should_paste);
+    popup::run_popup(config, should_paste, store);
 }
 
 fn cmd_clear() {
-    let items = storage::load_history();
+    let dirs = Directories::discover();
+    let store = Store::new(dirs);
+    let image_store = store.images();
+    let items = store.load_history();
     for item in &items {
         if let ClipItem::Image { filename, .. } = item {
             if !filename.is_empty() {
-                storage::delete_image_file(filename);
+                image_store.delete(filename);
             }
         }
     }
 
-    if storage::save_history(&VecDeque::new()).is_ok() {
+    if store.save_history(&VecDeque::new()).is_ok() {
         println!("History cleared.");
     } else {
         eprintln!("Failed to clear history.");
@@ -78,21 +86,21 @@ DATA:
 // ── daemon ─────────────────────────────────────────────────────────
 
 fn run_daemon() {
-    let config = Config::load();
+    let dirs = Directories::discover();
+    let store = Store::new(dirs);
+    let config = store.load_config();
     theme::set_debug_logging(config.general.debug_logging);
 
-    // Cache directory paths to avoid repeated PathBuf construction in the hot loop
-    let data_dir = Config::data_dir();
-    let _ = std::fs::create_dir_all(&data_dir);
-    let _ = std::fs::create_dir_all(Config::images_dir());
+    let image_store = store.images();
+    let _ = std::fs::create_dir_all(store.data_dir());
+    let _ = std::fs::create_dir_all(image_store.dir());
 
     // Write PID file to allow the popup to verify the daemon is active
     let pid = std::process::id();
-    let pid_file = data_dir.join("daemon.pid");
-    let _ = std::fs::write(&pid_file, pid.to_string());
+    let _ = std::fs::write(store.history_path().parent().unwrap().join("daemon.pid"), pid.to_string());
 
     // Start IPC server for event-driven popup→daemon communication
-    let ipc_rx = match ipc::start_server(&data_dir.join("daemon.sock")) {
+    let ipc_rx = match ipc::start_server(&ipc::socket_path(&store)) {
         Ok(rx) => {
             eprintln!("[daemon] IPC server started");
             Some(rx)
@@ -105,24 +113,22 @@ fn run_daemon() {
     };
 
     // ── Pre-cache desktop apps and image thumbnails ──────────────
-    // This runs in a background thread so the daemon loop starts
-    // immediately.  The cache files are ready by the time the user
-    // opens the popup for the first time.
     {
-        let history_items = storage::load_history();
+        let history_items = store.load_history();
+        let images_dir = image_store.dir().to_path_buf();
+        let store_for_cache = store.clone();
         std::thread::Builder::new()
             .name("precache".into())
             .spawn(move || {
                 // Cache desktop apps (slow I/O scan)
-                let apps = easycopy::desktop::load_desktop_apps();
-                if let Err(e) = easycopy::desktop::save_apps_cache(&apps) {
+                let apps = desktop::load_desktop_apps();
+                if let Err(e) = store_for_cache.save_apps_cache(&apps) {
                     eprintln!("[daemon] warning: failed to write apps cache: {e}");
                 } else {
                     eprintln!("[daemon] cached {} desktop apps", apps.len());
                 }
 
                 // Pre-compute missing thumbnails for all image clips
-                let images_dir = Config::images_dir();
                 for item in &history_items {
                     if let ClipItem::Image { filename, .. } = item {
                         if filename.is_empty() {
@@ -150,8 +156,8 @@ fn run_daemon() {
         config.general.max_text_items,
         config.general.max_image_items,
     );
-    history.set_items(storage::load_history());
-    storage::cleanup_orphaned(history.items());
+    history.set_items(store.load_history());
+    let _ = image_store.cleanup_orphaned(history.items());
 
     let mut monitor = ClipboardMonitor::new();
 
@@ -198,6 +204,7 @@ fn run_daemon() {
     let tick_ms = 50;
     let ticks_per_poll = (poll_interval / tick_ms).max(1);
     let mut tick_count = 0u64;
+    let mut last_history_save: Option<Instant> = None;
 
     loop {
         // ── IPC paste requests from popup ────────────────────────
@@ -207,7 +214,7 @@ fn run_daemon() {
                     let write_ok = match item {
                         ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
                         ClipItem::Image { filename, .. } => {
-                            if let Ok((w, h, data)) = storage::load_image(&filename) {
+                            if let Ok((w, h, data)) = image_store.load(&filename) {
                                 let img_data = arboard::ImageData {
                                     width: w as usize,
                                     height: h as usize,
@@ -245,7 +252,7 @@ fn run_daemon() {
                         if theme::is_debug_logging() {
                             eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
                         }
-                        let _ = process_clip_item(raw, &mut history);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, &store);
                     } else if theme::is_debug_logging() {
                         eprintln!("[daemon] monitor.poll() returned None (no change)");
                     }
@@ -258,7 +265,7 @@ fn run_daemon() {
                 tick_count = 0;
                 if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
-                        let _ = process_clip_item(raw, &mut history);
+                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, &store);
                     }
                 }
             }
@@ -296,7 +303,13 @@ fn run_daemon() {
 
 /// Process a clip item detected by the monitor — saves images, adds to history.
 /// Returns the processed item if it was added to history, None otherwise.
-fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<ClipItem> {
+fn process_clip_item(
+    raw: ClipItem,
+    history: &mut HistoryManager,
+    last_save: &mut Option<Instant>,
+    image_store: &ImageStore,
+    store: &Store,
+) -> Option<ClipItem> {
     let item = match raw {
         ClipItem::Image {
             data: Some(bytes),
@@ -304,7 +317,7 @@ fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<Clip
             height,
             timestamp,
             ..
-        } => match storage::save_image_owned(bytes, width, height) {
+        } => match image_store.save_owned(bytes, width, height) {
             Ok(filename) => ClipItem::Image {
                 width,
                 height,
@@ -322,8 +335,15 @@ fn process_clip_item(raw: ClipItem, history: &mut HistoryManager) -> Option<Clip
     };
 
     if history.add(item.clone()) {
-        if let Err(e) = storage::save_history(history.items()) {
-            eprintln!("[daemon] failed to save history: {e}");
+        let now = Instant::now();
+        if last_save
+            .map(|t| now.duration_since(t) > HISTORY_SAVE_INTERVAL)
+            .unwrap_or(true)
+        {
+            if let Err(e) = store.save_history(history.items()) {
+                eprintln!("[daemon] failed to save history: {e}");
+            }
+            *last_save = Some(now);
         }
         Some(item)
     } else {

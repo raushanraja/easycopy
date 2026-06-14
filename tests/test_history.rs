@@ -1,4 +1,4 @@
-use easycopy::history::{ClipItem, HistoryManager};
+use easycopy::clipboard::history::{ClipItem, HistoryManager};
 
 fn text(s: &str, ts: u64) -> ClipItem {
     ClipItem::Text {

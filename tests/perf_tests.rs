@@ -1,4 +1,6 @@
-use easycopy::history::{ClipItem, HistoryManager};
+use easycopy::clipboard::history::{ClipItem, HistoryManager};
+use easycopy::config::dirs::Directories;
+use easycopy::store::history;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -67,7 +69,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        easycopy::storage::save_history_to_path(&path, &items).unwrap();
+        history::save_history_to_path(&Directories::discover(), &path, &items).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] save_history x100 (200 items): {:?}", elapsed);
@@ -79,7 +81,7 @@ fn perf_history_serialization() {
 
     let start = Instant::now();
     for _ in 0..100 {
-        let _ = easycopy::storage::load_history_from_path(&path).unwrap();
+        let _ = history::load_history_from_path(&Directories::discover(), &path).unwrap();
     }
     let elapsed = start.elapsed();
     eprintln!("[perf] load_history x100 (200 items): {:?}", elapsed);
