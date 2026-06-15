@@ -1,16 +1,17 @@
 use easycopy::clipboard::ClipboardMonitor;
-use easycopy::clipboard::x11::{SelectionEvent, X11Watcher};
-use easycopy::config::dirs::Directories;
 use easycopy::clipboard::history::{ClipItem, HistoryManager};
+use easycopy::clipboard::x11::{SelectionEvent, X11Watcher};
+use easycopy::config::Config;
+use easycopy::config::dirs::Directories;
 use easycopy::hotkey::parse_hotkey;
 use easycopy::ipc;
 use easycopy::launcher::desktop;
-use easycopy::store::ImageStore;
-use easycopy::store::Store;
-use easycopy::ui::popup;
-use easycopy::ui::theme;
+use easycopy::store::{ImageStore, Store};
+use easycopy::ui::{popup, theme};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -97,10 +98,13 @@ fn run_daemon() {
 
     // Write PID file to allow the popup to verify the daemon is active
     let pid = std::process::id();
-    let _ = std::fs::write(store.history_path().parent().unwrap().join("daemon.pid"), pid.to_string());
+    let _ = std::fs::write(
+        store.history_path().parent().unwrap().join("daemon.pid"),
+        pid.to_string(),
+    );
 
     // Start IPC server for event-driven popup→daemon communication
-    let ipc_rx = match ipc::start_server(&ipc::socket_path(&store)) {
+    let mut ipc_rx = match ipc::start_server(&ipc::socket_path(&store)) {
         Ok(rx) => {
             eprintln!("[daemon] IPC server started");
             Some(rx)
@@ -120,34 +124,7 @@ fn run_daemon() {
         std::thread::Builder::new()
             .name("precache".into())
             .spawn(move || {
-                // Cache desktop apps (slow I/O scan)
-                let apps = desktop::load_desktop_apps();
-                if let Err(e) = store_for_cache.save_apps_cache(&apps) {
-                    eprintln!("[daemon] warning: failed to write apps cache: {e}");
-                } else {
-                    eprintln!("[daemon] cached {} desktop apps", apps.len());
-                }
-
-                // Pre-compute missing thumbnails for all image clips
-                for item in &history_items {
-                    if let ClipItem::Image { filename, .. } = item {
-                        if filename.is_empty() {
-                            continue;
-                        }
-                        let thumb_path = images_dir.join(format!("thumb_{}", filename));
-                        if thumb_path.exists() {
-                            continue;
-                        }
-                        let src_path = images_dir.join(filename);
-                        if !src_path.exists() {
-                            continue;
-                        }
-                        if let Ok(img) = image::open(&src_path) {
-                            let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
-                            let _ = thumb.save(&thumb_path);
-                        }
-                    }
-                }
+                precache_apps_and_thumbnails(history_items, images_dir, store_for_cache);
             })
             .ok();
     }
@@ -161,7 +138,6 @@ fn run_daemon() {
 
     let mut monitor = ClipboardMonitor::new();
 
-    use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
     let hotkey_mgr = GlobalHotKeyManager::new().ok();
     let parsed_hotkey = parse_hotkey(&config.general.hotkey);
     let mut hotkey_registered = false;
@@ -207,70 +183,18 @@ fn run_daemon() {
     let mut last_history_save: Option<Instant> = None;
 
     loop {
-        // ── IPC paste requests from popup ────────────────────────
-        if let Some(ref rx) = ipc_rx {
-            while let Ok(item) = rx.try_recv() {
-                if let Ok(mut cb) = arboard::Clipboard::new() {
-                    let write_ok = match item {
-                        ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
-                        ClipItem::Image { filename, .. } => {
-                            if let Ok((w, h, data)) = image_store.load(&filename) {
-                                let img_data = arboard::ImageData {
-                                    width: w as usize,
-                                    height: h as usize,
-                                    bytes: std::borrow::Cow::Owned(data),
-                                };
-                                cb.set_image(img_data).is_ok()
-                            } else {
-                                false
-                            }
-                        }
-                    };
-                    if write_ok && config.general.auto_paste {
-                        std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
-                        let _ = std::process::Command::new("xdotool")
-                            .args(["key", "ctrl+v"])
-                            .status();
-                    }
-                }
-            }
-        }
-
-        // ── Clipboard monitoring ──────────────────────────────────
-        if let Some(ref mut x11) = x11_watcher {
-            // Event-driven: check for XFixes selection events
-            let x11_events = x11.poll_events();
-            if theme::is_debug_logging() && !x11_events.is_empty() {
-                eprintln!("[daemon] X11 events: {:?}", x11_events);
-            }
-            for event in &x11_events {
-                if *event == SelectionEvent::Clipboard && config.general.enable_clipping {
-                    if theme::is_debug_logging() {
-                        eprintln!("[daemon] clipboard event → checking monitor");
-                    }
-                    if let Some(raw) = monitor.poll() {
-                        if theme::is_debug_logging() {
-                            eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
-                        }
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, &store);
-                    } else if theme::is_debug_logging() {
-                        eprintln!("[daemon] monitor.poll() returned None (no change)");
-                    }
-                }
-            }
-        } else {
-            // Fallback: timer-based polling
-            tick_count += 1;
-            if tick_count >= ticks_per_poll {
-                tick_count = 0;
-                if config.general.enable_clipping {
-                    if let Some(raw) = monitor.poll() {
-                        let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, &store);
-                    }
-                }
-            }
-        }
-
+        drain_ipc_requests(ipc_rx.as_mut(), &config, &image_store);
+        poll_clipboard(
+            x11_watcher.as_mut(),
+            &mut monitor,
+            &mut history,
+            &mut last_history_save,
+            &image_store,
+            &store,
+            config.general.enable_clipping,
+            &mut tick_count,
+            ticks_per_poll,
+        );
         // ── Hotkey: show popup ───────────────────────────────────
         if hotkey_registered {
             if let Ok(event) = hotkey_rx.try_recv() {
@@ -281,23 +205,143 @@ fn run_daemon() {
                 }
             }
         }
+        daemon_sleep(x11_watcher.as_mut(), tick_ms);
+    }
+}
 
-        // ── Wait ──────────────────────────────────────────────────
-        if let Some(ref mut x11) = x11_watcher {
-            // Block on the X11 fd (wake immediately on clipboard events)
-            let x11_fd = x11.fd();
-            let mut pollfd = libc::pollfd {
-                fd: x11_fd,
-                events: libc::POLLIN,
-                revents: 0,
-            };
-            let ret = unsafe { libc::poll(&mut pollfd, 1, 50) };
-            if theme::is_debug_logging() && ret > 0 {
-                eprintln!("[daemon] poll() woke (revents={})", pollfd.revents,);
+/// Cache desktop apps and pre-compute thumbnails for existing image clips.
+fn precache_apps_and_thumbnails(
+    history_items: VecDeque<ClipItem>,
+    images_dir: std::path::PathBuf,
+    store: Store,
+) {
+    let apps = desktop::load_desktop_apps();
+    if let Err(e) = store.save_apps_cache(&apps) {
+        eprintln!("[daemon] warning: failed to write apps cache: {e}");
+    } else {
+        eprintln!("[daemon] cached {} desktop apps", apps.len());
+    }
+
+    for item in &history_items {
+        if let ClipItem::Image { filename, .. } = item {
+            if filename.is_empty() {
+                continue;
             }
-        } else {
-            std::thread::sleep(Duration::from_millis(tick_ms));
+            let thumb_path = images_dir.join(format!("thumb_{}", filename));
+            if thumb_path.exists() {
+                continue;
+            }
+            let src_path = images_dir.join(filename);
+            if !src_path.exists() {
+                continue;
+            }
+            if let Ok(img) = image::open(&src_path) {
+                let thumb = img.resize(52, 52, image::imageops::FilterType::Triangle);
+                let _ = thumb.save(&thumb_path);
+            }
         }
+    }
+}
+
+/// Drain any pending paste requests from the popup via IPC.
+fn drain_ipc_requests(
+    ipc_rx: Option<&mut mpsc::Receiver<ClipItem>>,
+    config: &Config,
+    image_store: &ImageStore,
+) {
+    let Some(rx) = ipc_rx else { return; };
+    while let Ok(item) = rx.try_recv() {
+        if let Ok(mut cb) = arboard::Clipboard::new() {
+            let write_ok = match item {
+                ClipItem::Text { content, .. } => cb.set_text(content).is_ok(),
+                ClipItem::Image { filename, .. } => {
+                    if let Ok((w, h, data)) = image_store.load(&filename) {
+                        let img_data = arboard::ImageData {
+                            width: w as usize,
+                            height: h as usize,
+                            bytes: std::borrow::Cow::Owned(data),
+                        };
+                        cb.set_image(img_data).is_ok()
+                    } else {
+                        false
+                    }
+                }
+            };
+            if write_ok && config.general.auto_paste {
+                std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
+                let _ = std::process::Command::new("xdotool")
+                    .args(["key", "ctrl+v"])
+                    .status();
+            }
+        }
+    }
+}
+
+/// Check for new clipboard content — X11 event-driven or timer-poll fallback.
+fn poll_clipboard(
+    x11: Option<&mut X11Watcher>,
+    monitor: &mut ClipboardMonitor,
+    history: &mut HistoryManager,
+    last_save: &mut Option<Instant>,
+    image_store: &ImageStore,
+    store: &Store,
+    enable_clipping: bool,
+    tick_count: &mut u64,
+    ticks_per_poll: u64,
+) {
+    if let Some(x11) = x11 {
+        // Event-driven: check for XFixes selection events
+        let events = x11.poll_events();
+        if theme::is_debug_logging() && !events.is_empty() {
+            eprintln!("[daemon] X11 events: {:?}", events);
+        }
+        for event in &events {
+            if *event == SelectionEvent::Clipboard {
+                if theme::is_debug_logging() {
+                    eprintln!("[daemon] clipboard event → checking monitor");
+                }
+                if enable_clipping {
+                    if let Some(raw) = monitor.poll() {
+                        if theme::is_debug_logging() {
+                            eprintln!("[daemon] monitor.poll() returned: {:?}", raw);
+                        }
+                        let _ = process_clip_item(raw, history, last_save, image_store, store);
+                    } else if theme::is_debug_logging() {
+                        eprintln!("[daemon] monitor.poll() returned None (no change)");
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback: timer-based polling
+        *tick_count += 1;
+        if *tick_count >= ticks_per_poll {
+            *tick_count = 0;
+            if enable_clipping {
+                if let Some(raw) = monitor.poll() {
+                    let _ = process_clip_item(raw, history, last_save, image_store, store);
+                }
+            }
+        }
+    }
+}
+
+/// Sleep until the next event source needs attention.
+fn daemon_sleep(x11: Option<&mut X11Watcher>, tick_ms: u64) {
+    if let Some(x11) = x11 {
+        // Block on the X11 fd (wake immediately on clipboard events)
+        let x11_fd = x11.fd();
+        let mut pollfd = libc::pollfd {
+            fd: x11_fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let ret = unsafe { libc::poll(&mut pollfd, 1, 50) };
+        if theme::is_debug_logging() && ret > 0 {
+            eprintln!("[daemon] poll() woke (revents={})", pollfd.revents,);
+        }
+    } else {
+        std::thread::sleep(Duration::from_millis(tick_ms));
     }
 }
 
@@ -317,29 +361,29 @@ fn process_clip_item(
             height,
             timestamp,
             ..
-        } => match image_store.save_owned(bytes, width, height) {
-            Ok(filename) => ClipItem::Image {
+        } => {
+            let filename = match image_store.save_owned(bytes, width, height) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("[daemon] failed to save image: {e}");
+                    return None;
+                }
+            };
+            ClipItem::Image {
                 width,
                 height,
                 timestamp,
                 filename,
                 data: None,
                 use_count: 0,
-            },
-            Err(e) => {
-                eprintln!("[daemon] failed to save image: {e}");
-                return None;
             }
-        },
+        }
         other => other,
     };
 
     if history.add(item.clone()) {
         let now = Instant::now();
-        if last_save
-            .map(|t| now.duration_since(t) > HISTORY_SAVE_INTERVAL)
-            .unwrap_or(true)
-        {
+        if last_save.map_or(true, |t| now.duration_since(t) > HISTORY_SAVE_INTERVAL) {
             if let Err(e) = store.save_history(history.items()) {
                 eprintln!("[daemon] failed to save history: {e}");
             }
