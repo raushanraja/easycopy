@@ -16,6 +16,13 @@ pub struct DesktopApp {
     pub use_count: u64,
 }
 
+impl DesktopApp {
+    /// Unique key for usage stats (name + exec combination).
+    pub fn usage_key(&self) -> String {
+        format!("{}\n{}", self.name, self.exec)
+    }
+}
+
 // ================================================================
 //  PUBLIC API (domain logic only — persistence in store::desktop)
 // ================================================================
@@ -97,13 +104,9 @@ fn scan_desktop_files() -> Vec<DesktopApp> {
     apps
 }
 
-fn app_usage_key(app: &DesktopApp) -> String {
-    format!("{}\n{}", app.name, app.exec)
-}
-
 fn apply_app_usage(dirs: &Directories, apps: &mut [DesktopApp]) {
     let usage = desktop::load_app_usage(dirs);
     for app in apps {
-        app.use_count = usage.get(&app_usage_key(app)).copied().unwrap_or(0);
+        app.use_count = usage.get(&app.usage_key()).copied().unwrap_or(0);
     }
 }
