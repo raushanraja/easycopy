@@ -80,225 +80,192 @@ pub struct ThemeColors {
     pub weak_text_color: egui::Color32,
 }
 
+/// Generate a theme palette constructor from inline field:value data.
+/// Replaces the repetitive `pub fn name() -> Self { Self { ... } }` pattern.
+macro_rules! theme_colors {
+    ($name:ident { $($field:ident: $value:expr),* $(,)? }) => {
+        pub fn $name() -> ThemeColors {
+            ThemeColors { $($field: $value),* }
+        }
+    };
+}
+
 impl ThemeColors {
-    pub fn dark() -> Self {
-        Self {
-            window_bg: egui::Color32::from_rgb(11, 15, 25), // Slate 950
-            panel_bg: egui::Color32::from_rgb(11, 15, 25),
-            extreme_bg: egui::Color32::from_rgb(20, 26, 38), // Slate 900
-            widget_inactive_bg: egui::Color32::from_rgb(20, 26, 38),
-            widget_hovered_bg: egui::Color32::from_rgb(28, 35, 51),
-            widget_active_bg: egui::Color32::from_rgb(51, 65, 85),
-            widget_border: egui::Color32::from_rgb(33, 41, 54), // Slate 800
-            selection_bg: egui::Color32::from_rgb(79, 70, 229), // Indigo 600
-            selection_stroke: egui::Color32::from_rgb(129, 140, 248), // Indigo 400
-            card_bg: egui::Color32::from_rgb(15, 20, 30),       // Slate 950 variant
-            card_bg_hovered: egui::Color32::from_rgb(20, 26, 38), // Slate 900
-            card_bg_selected: egui::Color32::from_rgb(30, 27, 75), // Indigo 950
-            card_stroke: egui::Color32::from_rgb(33, 41, 54),   // Slate 800
-            card_stroke_selected: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            card_rounding: 12.0,
-            selection_bar: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            accent: egui::Color32::from_rgb(99, 102, 241),        // Indigo 500
-            accent_light: egui::Color32::from_rgb(129, 140, 248), // Indigo 400
-            accent_dark: egui::Color32::from_rgb(79, 70, 229),    // Indigo 600
-            badge_bg_selected: egui::Color32::from_rgb(20, 26, 38),
-            badge_bg_normal: egui::Color32::from_rgb(20, 26, 38), // Slate 900
-            badge_icon_color: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
-            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
-            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200), // Slate 800
-            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
-            lightbox_icon_hovered: egui::Color32::WHITE,
-            shortcut_color: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180),
-            text_color: egui::Color32::from_rgb(241, 245, 249),
-            weak_text_color: egui::Color32::from_rgb(148, 163, 184),
-        }
-    }
+    theme_colors!(dark {
+        window_bg: egui::Color32::from_rgb(11, 15, 25),
+        panel_bg: egui::Color32::from_rgb(11, 15, 25),
+        extreme_bg: egui::Color32::from_rgb(20, 26, 38),
+        widget_inactive_bg: egui::Color32::from_rgb(20, 26, 38),
+        widget_hovered_bg: egui::Color32::from_rgb(28, 35, 51),
+        widget_active_bg: egui::Color32::from_rgb(51, 65, 85),
+        widget_border: egui::Color32::from_rgb(33, 41, 54),
+        selection_bg: egui::Color32::from_rgb(79, 70, 229),
+        selection_stroke: egui::Color32::from_rgb(129, 140, 248),
+        card_bg: egui::Color32::from_rgb(15, 20, 30),
+        card_bg_hovered: egui::Color32::from_rgb(20, 26, 38),
+        card_bg_selected: egui::Color32::from_rgb(30, 27, 75),
+        card_stroke: egui::Color32::from_rgb(33, 41, 54),
+        card_stroke_selected: egui::Color32::from_rgb(99, 102, 241),
+        card_rounding: 12.0,
+        selection_bar: egui::Color32::from_rgb(99, 102, 241),
+        accent: egui::Color32::from_rgb(99, 102, 241),
+        accent_light: egui::Color32::from_rgb(129, 140, 248),
+        accent_dark: egui::Color32::from_rgb(79, 70, 229),
+        badge_bg_selected: egui::Color32::from_rgb(20, 26, 38),
+        badge_bg_normal: egui::Color32::from_rgb(20, 26, 38),
+        badge_icon_color: egui::Color32::from_rgb(99, 102, 241),
+        icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
+        lightbox_overlay: egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
+        lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200),
+        lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+        lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+        lightbox_icon_hovered: egui::Color32::WHITE,
+        shortcut_color: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+        text_color: egui::Color32::from_rgb(241, 245, 249),
+        weak_text_color: egui::Color32::from_rgb(148, 163, 184),
+    });
 
-    pub fn light() -> Self {
-        Self {
-            window_bg: egui::Color32::from_rgb(248, 250, 252), // Slate 50
-            panel_bg: egui::Color32::from_rgb(248, 250, 252),
-            extreme_bg: egui::Color32::from_rgb(241, 245, 249), // Slate 100
-            widget_inactive_bg: egui::Color32::from_rgb(241, 245, 249),
-            widget_hovered_bg: egui::Color32::from_rgb(226, 232, 240),
-            widget_active_bg: egui::Color32::from_rgb(203, 213, 225),
-            widget_border: egui::Color32::from_rgb(226, 232, 240), // Slate 200
-            selection_bg: egui::Color32::from_rgb(79, 70, 229),    // Indigo 600
-            selection_stroke: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            card_bg: egui::Color32::from_rgb(255, 255, 255),       // White
-            card_bg_hovered: egui::Color32::from_rgb(241, 245, 249), // Slate 100
-            card_bg_selected: egui::Color32::from_rgb(224, 231, 255), // Indigo 100
-            card_stroke: egui::Color32::from_rgb(226, 232, 240),   // Slate 200
-            card_stroke_selected: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            card_rounding: 12.0,
-            selection_bar: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            accent: egui::Color32::from_rgb(99, 102, 241),        // Indigo 500
-            accent_light: egui::Color32::from_rgb(129, 140, 248), // Indigo 400
-            accent_dark: egui::Color32::from_rgb(79, 70, 229),    // Indigo 600
-            badge_bg_selected: egui::Color32::from_rgb(226, 232, 240),
-            badge_bg_normal: egui::Color32::from_rgb(241, 245, 249), // Slate 100
-            badge_icon_color: egui::Color32::from_rgb(99, 102, 241), // Indigo 500
-            icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
-            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
-            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200),
-            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
-            lightbox_icon_hovered: egui::Color32::WHITE,
-            shortcut_color: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-            text_color: egui::Color32::from_rgb(15, 23, 42),
-            weak_text_color: egui::Color32::from_rgb(100, 116, 139),
-        }
-    }
+    theme_colors!(light {
+        window_bg: egui::Color32::from_rgb(248, 250, 252),
+        panel_bg: egui::Color32::from_rgb(248, 250, 252),
+        extreme_bg: egui::Color32::from_rgb(241, 245, 249),
+        widget_inactive_bg: egui::Color32::from_rgb(241, 245, 249),
+        widget_hovered_bg: egui::Color32::from_rgb(226, 232, 240),
+        widget_active_bg: egui::Color32::from_rgb(203, 213, 225),
+        widget_border: egui::Color32::from_rgb(226, 232, 240),
+        selection_bg: egui::Color32::from_rgb(79, 70, 229),
+        selection_stroke: egui::Color32::from_rgb(99, 102, 241),
+        card_bg: egui::Color32::from_rgb(255, 255, 255),
+        card_bg_hovered: egui::Color32::from_rgb(241, 245, 249),
+        card_bg_selected: egui::Color32::from_rgb(224, 231, 255),
+        card_stroke: egui::Color32::from_rgb(226, 232, 240),
+        card_stroke_selected: egui::Color32::from_rgb(99, 102, 241),
+        card_rounding: 12.0,
+        selection_bar: egui::Color32::from_rgb(99, 102, 241),
+        accent: egui::Color32::from_rgb(99, 102, 241),
+        accent_light: egui::Color32::from_rgb(129, 140, 248),
+        accent_dark: egui::Color32::from_rgb(79, 70, 229),
+        badge_bg_selected: egui::Color32::from_rgb(226, 232, 240),
+        badge_bg_normal: egui::Color32::from_rgb(241, 245, 249),
+        badge_icon_color: egui::Color32::from_rgb(99, 102, 241),
+        icon_color_badge_normal: egui::Color32::from_rgb(99, 102, 241),
+        lightbox_overlay: egui::Color32::from_rgba_unmultiplied(11, 15, 25, 220),
+        lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 41, 59, 200),
+        lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+        lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+        lightbox_icon_hovered: egui::Color32::WHITE,
+        shortcut_color: egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+        text_color: egui::Color32::from_rgb(15, 23, 42),
+        weak_text_color: egui::Color32::from_rgb(100, 116, 139),
+    });
 
-    pub fn nord() -> Self {
-        let polar_night_0 = egui::Color32::from_rgb(46, 52, 64);
-        let polar_night_1 = egui::Color32::from_rgb(59, 66, 82);
-        let polar_night_2 = egui::Color32::from_rgb(67, 76, 94);
-        let polar_night_3 = egui::Color32::from_rgb(76, 86, 106);
-        let frost_7 = egui::Color32::from_rgb(143, 188, 187);
-        let frost_8 = egui::Color32::from_rgb(136, 192, 208);
-        let frost_9 = egui::Color32::from_rgb(129, 161, 193);
-        let frost_10 = egui::Color32::from_rgb(94, 129, 172);
+    theme_colors!(nord {
+        window_bg: egui::Color32::from_rgb(46, 52, 64),
+        panel_bg: egui::Color32::from_rgb(46, 52, 64),
+        extreme_bg: egui::Color32::from_rgb(59, 66, 82),
+        widget_inactive_bg: egui::Color32::from_rgb(59, 66, 82),
+        widget_hovered_bg: egui::Color32::from_rgb(67, 76, 94),
+        widget_active_bg: egui::Color32::from_rgb(76, 86, 106),
+        widget_border: egui::Color32::from_rgb(67, 76, 94),
+        selection_bg: egui::Color32::from_rgb(94, 129, 172),
+        selection_stroke: egui::Color32::from_rgb(136, 192, 208),
+        card_bg: egui::Color32::from_rgb(46, 52, 64),
+        card_bg_hovered: egui::Color32::from_rgb(59, 66, 82),
+        card_bg_selected: egui::Color32::from_rgb(67, 76, 94),
+        card_stroke: egui::Color32::from_rgb(59, 66, 82),
+        card_stroke_selected: egui::Color32::from_rgb(136, 192, 208),
+        card_rounding: 12.0,
+        selection_bar: egui::Color32::from_rgb(136, 192, 208),
+        accent: egui::Color32::from_rgb(136, 192, 208),
+        accent_light: egui::Color32::from_rgb(143, 188, 187),
+        accent_dark: egui::Color32::from_rgb(129, 161, 193),
+        badge_bg_selected: egui::Color32::from_rgb(59, 66, 82),
+        badge_bg_normal: egui::Color32::from_rgb(59, 66, 82),
+        badge_icon_color: egui::Color32::from_rgb(136, 192, 208),
+        icon_color_badge_normal: egui::Color32::from_rgb(136, 192, 208),
+        lightbox_overlay: egui::Color32::from_rgba_unmultiplied(36, 41, 51, 230),
+        lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(46, 52, 64, 200),
+        lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+        lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+        lightbox_icon_hovered: egui::Color32::WHITE,
+        shortcut_color: egui::Color32::from_rgba_unmultiplied(216, 222, 233, 180),
+        text_color: egui::Color32::from_rgb(236, 239, 244),
+        weak_text_color: egui::Color32::from_rgb(162, 175, 195),
+    });
 
-        Self {
-            window_bg: polar_night_0,
-            panel_bg: polar_night_0,
-            extreme_bg: polar_night_1,
-            widget_inactive_bg: polar_night_1,
-            widget_hovered_bg: polar_night_2,
-            widget_active_bg: polar_night_3,
-            widget_border: polar_night_2,
-            selection_bg: frost_10,
-            selection_stroke: frost_8,
-            card_bg: polar_night_0,
-            card_bg_hovered: polar_night_1,
-            card_bg_selected: polar_night_2,
-            card_stroke: polar_night_1,
-            card_stroke_selected: frost_8,
-            card_rounding: 12.0,
-            selection_bar: frost_8,
-            accent: frost_8,
-            accent_light: frost_7,
-            accent_dark: frost_9,
-            badge_bg_selected: polar_night_1,
-            badge_bg_normal: polar_night_1,
-            badge_icon_color: frost_8,
-            icon_color_badge_normal: frost_8,
-            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(36, 41, 51, 230),
-            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(46, 52, 64, 200),
-            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
-            lightbox_icon_hovered: egui::Color32::WHITE,
-            shortcut_color: egui::Color32::from_rgba_unmultiplied(216, 222, 233, 180),
-            text_color: egui::Color32::from_rgb(236, 239, 244),
-            weak_text_color: egui::Color32::from_rgb(162, 175, 195),
-        }
-    }
+    theme_colors!(catppuccin {
+        window_bg: egui::Color32::from_rgb(30, 30, 46),
+        panel_bg: egui::Color32::from_rgb(30, 30, 46),
+        extreme_bg: egui::Color32::from_rgb(24, 24, 37),
+        widget_inactive_bg: egui::Color32::from_rgb(24, 24, 37),
+        widget_hovered_bg: egui::Color32::from_rgb(49, 50, 68),
+        widget_active_bg: egui::Color32::from_rgb(67, 76, 94),
+        widget_border: egui::Color32::from_rgb(49, 50, 68),
+        selection_bg: egui::Color32::from_rgb(137, 180, 250),
+        selection_stroke: egui::Color32::from_rgb(180, 190, 254),
+        card_bg: egui::Color32::from_rgb(30, 30, 46),
+        card_bg_hovered: egui::Color32::from_rgb(24, 24, 37),
+        card_bg_selected: egui::Color32::from_rgb(49, 50, 68),
+        card_stroke: egui::Color32::from_rgb(49, 50, 68),
+        card_stroke_selected: egui::Color32::from_rgb(180, 190, 254),
+        card_rounding: 12.0,
+        selection_bar: egui::Color32::from_rgb(180, 190, 254),
+        accent: egui::Color32::from_rgb(180, 190, 254),
+        accent_light: egui::Color32::from_rgb(203, 166, 247),
+        accent_dark: egui::Color32::from_rgb(116, 199, 236),
+        badge_bg_selected: egui::Color32::from_rgb(24, 24, 37),
+        badge_bg_normal: egui::Color32::from_rgb(24, 24, 37),
+        badge_icon_color: egui::Color32::from_rgb(180, 190, 254),
+        icon_color_badge_normal: egui::Color32::from_rgb(180, 190, 254),
+        lightbox_overlay: egui::Color32::from_rgba_unmultiplied(17, 17, 27, 230),
+        lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 30, 46, 200),
+        lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+        lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+        lightbox_icon_hovered: egui::Color32::WHITE,
+        shortcut_color: egui::Color32::from_rgba_unmultiplied(205, 214, 244, 180),
+        text_color: egui::Color32::from_rgb(205, 214, 244),
+        weak_text_color: egui::Color32::from_rgb(166, 173, 200),
+    });
 
-    pub fn catppuccin() -> Self {
-        let base = egui::Color32::from_rgb(30, 30, 46);
-        let mantle = egui::Color32::from_rgb(24, 24, 37);
-        let surface0 = egui::Color32::from_rgb(49, 50, 68);
-        let surface1 = egui::Color32::from_rgb(67, 76, 94);
-        let lavender = egui::Color32::from_rgb(180, 190, 254);
-        let mauve = egui::Color32::from_rgb(203, 166, 247);
-        let blue = egui::Color32::from_rgb(137, 180, 250);
-        let sapphire = egui::Color32::from_rgb(116, 199, 236);
+    theme_colors!(dracula {
+        window_bg: egui::Color32::from_rgb(40, 42, 54),
+        panel_bg: egui::Color32::from_rgb(40, 42, 54),
+        extreme_bg: egui::Color32::from_rgb(68, 71, 90),
+        widget_inactive_bg: egui::Color32::from_rgb(68, 71, 90),
+        widget_hovered_bg: egui::Color32::from_rgb(90, 93, 115),
+        widget_active_bg: egui::Color32::from_rgb(98, 114, 164),
+        widget_border: egui::Color32::from_rgb(98, 114, 164),
+        selection_bg: egui::Color32::from_rgb(189, 147, 249),
+        selection_stroke: egui::Color32::from_rgb(80, 250, 123),
+        card_bg: egui::Color32::from_rgb(40, 42, 54),
+        card_bg_hovered: egui::Color32::from_rgb(68, 71, 90),
+        card_bg_selected: egui::Color32::from_rgb(50, 52, 67),
+        card_stroke: egui::Color32::from_rgb(68, 71, 90),
+        card_stroke_selected: egui::Color32::from_rgb(189, 147, 249),
+        card_rounding: 12.0,
+        selection_bar: egui::Color32::from_rgb(189, 147, 249),
+        accent: egui::Color32::from_rgb(189, 147, 249),
+        accent_light: egui::Color32::from_rgb(255, 121, 198),
+        accent_dark: egui::Color32::from_rgb(139, 233, 253),
+        badge_bg_selected: egui::Color32::from_rgb(68, 71, 90),
+        badge_bg_normal: egui::Color32::from_rgb(68, 71, 90),
+        badge_icon_color: egui::Color32::from_rgb(189, 147, 249),
+        icon_color_badge_normal: egui::Color32::from_rgb(189, 147, 249),
+        lightbox_overlay: egui::Color32::from_rgba_unmultiplied(20, 21, 28, 230),
+        lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(40, 42, 54, 200),
+        lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
+        lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
+        lightbox_icon_hovered: egui::Color32::WHITE,
+        shortcut_color: egui::Color32::from_rgba_unmultiplied(248, 248, 242, 180),
+        text_color: egui::Color32::from_rgb(248, 248, 242),
+        weak_text_color: egui::Color32::from_rgb(160, 172, 206),
+    });
 
-        Self {
-            window_bg: base,
-            panel_bg: base,
-            extreme_bg: mantle,
-            widget_inactive_bg: mantle,
-            widget_hovered_bg: surface0,
-            widget_active_bg: surface1,
-            widget_border: surface0,
-            selection_bg: blue,
-            selection_stroke: lavender,
-            card_bg: base,
-            card_bg_hovered: mantle,
-            card_bg_selected: surface0,
-            card_stroke: surface0,
-            card_stroke_selected: lavender,
-            card_rounding: 12.0,
-            selection_bar: lavender,
-            accent: lavender,
-            accent_light: mauve,
-            accent_dark: sapphire,
-            badge_bg_selected: mantle,
-            badge_bg_normal: mantle,
-            badge_icon_color: lavender,
-            icon_color_badge_normal: lavender,
-            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(17, 17, 27, 230),
-            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(30, 30, 46, 200),
-            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
-            lightbox_icon_hovered: egui::Color32::WHITE,
-            shortcut_color: egui::Color32::from_rgba_unmultiplied(205, 214, 244, 180),
-            text_color: egui::Color32::from_rgb(205, 214, 244),
-            weak_text_color: egui::Color32::from_rgb(166, 173, 200),
-        }
-    }
-
-    pub fn dracula() -> Self {
-        let background = egui::Color32::from_rgb(40, 42, 54);
-        let current_line = egui::Color32::from_rgb(68, 71, 90);
-        let comment = egui::Color32::from_rgb(98, 114, 164);
-        let purple = egui::Color32::from_rgb(189, 147, 249);
-        let pink = egui::Color32::from_rgb(255, 121, 198);
-        let green = egui::Color32::from_rgb(80, 250, 123);
-        let cyan = egui::Color32::from_rgb(139, 233, 253);
-
-        Self {
-            window_bg: background,
-            panel_bg: background,
-            extreme_bg: current_line,
-            widget_inactive_bg: current_line,
-            widget_hovered_bg: egui::Color32::from_rgb(90, 93, 115),
-            widget_active_bg: comment,
-            widget_border: comment,
-            selection_bg: purple,
-            selection_stroke: green,
-            card_bg: background,
-            card_bg_hovered: current_line,
-            card_bg_selected: egui::Color32::from_rgb(50, 52, 67),
-            card_stroke: current_line,
-            card_stroke_selected: purple,
-            card_rounding: 12.0,
-            selection_bar: purple,
-            accent: purple,
-            accent_light: pink,
-            accent_dark: cyan,
-            badge_bg_selected: current_line,
-            badge_bg_normal: current_line,
-            badge_icon_color: purple,
-            icon_color_badge_normal: purple,
-            lightbox_overlay: egui::Color32::from_rgba_unmultiplied(20, 21, 28, 230),
-            lightbox_control_bg: egui::Color32::from_rgba_unmultiplied(40, 42, 54, 200),
-            lightbox_close_btn_bg: egui::Color32::from_rgba_unmultiplied(255, 255, 255, 30),
-            lightbox_icon: egui::Color32::from_rgb(200, 200, 200),
-            lightbox_icon_hovered: egui::Color32::WHITE,
-            shortcut_color: egui::Color32::from_rgba_unmultiplied(248, 248, 242, 180),
-            text_color: egui::Color32::from_rgb(248, 248, 242),
-            weak_text_color: egui::Color32::from_rgb(160, 172, 206),
-        }
-    }
-
-    /// Return the theme palette based on config, or `None` if theming is disabled.
     pub fn from_config(config: &Config) -> Option<Self> {
         if !config.general.enable_theming {
             return None;
         }
-        Some(match config.general.theme {
-            Theme::Light => Self::light(),
-            Theme::Nord => Self::nord(),
-            Theme::Catppuccin => Self::catppuccin(),
-            Theme::Dracula => Self::dracula(),
-            _ => Self::dark(),
-        })
+        Some(config.general.theme.resolve())
     }
 }
 
@@ -693,15 +660,9 @@ pub fn load_custom_fonts(ctx: &egui::Context, config: &Config) {
 pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
     // --- Theme visuals ---
     if config.general.enable_theming {
-        let colors = match config.general.theme {
-            Theme::Light => ThemeColors::light(),
-            Theme::Nord => ThemeColors::nord(),
-            Theme::Catppuccin => ThemeColors::catppuccin(),
-            Theme::Dracula => ThemeColors::dracula(),
-            _ => ThemeColors::dark(),
-        };
-
-        let mut visuals = if config.general.theme.is_light() {
+        let theme = config.general.theme;
+        let colors = theme.resolve();
+        let mut visuals = if theme.is_light() {
             egui::Visuals::light()
         } else {
             egui::Visuals::dark()
@@ -720,7 +681,7 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
 
         visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, colors.text_color);
-        let fg_hover = if config.general.theme.is_light() {
+        let fg_hover = if theme.is_light() {
             egui::Color32::BLACK
         } else {
             egui::Color32::WHITE
