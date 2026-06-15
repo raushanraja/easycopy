@@ -182,6 +182,53 @@ struct PopupApp {
     lightbox_res_rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
 }
 
+// ── Theme popup helpers ─────────────────────────────────────────
+
+/// Draw a single selectable item in the theme popup dropdown.
+fn draw_theme_item(
+    ui: &mut egui::Ui,
+    label: &str,
+    is_selected: bool,
+    fg: egui::Color32,
+    theme_colors: Option<&ThemeColors>,
+) -> bool {
+    let (rect, response) = ui.allocate_exact_size(
+        egui::vec2(ui.available_width(), 26.0),
+        egui::Sense::click(),
+    );
+
+    let bg = if is_selected {
+        theme_colors.map_or(ui.visuals().selection.bg_fill, |c| c.selection_bg)
+    } else if response.hovered() {
+        theme_colors.map_or(ui.visuals().widgets.hovered.bg_fill, |c| c.widget_hovered_bg)
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+
+    ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg);
+
+    let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
+    ui.painter().text(
+        text_pos,
+        egui::Align2::LEFT_CENTER,
+        label,
+        egui::FontId::proportional(14.0),
+        fg,
+    );
+
+    response.clicked()
+}
+
+/// Section label + separator for the theme popup.
+fn section_label(ui: &mut egui::Ui, text: &str, weak_text_color: egui::Color32) {
+    ui.label(
+        egui::RichText::new(text)
+            .size(11.0)
+            .color(weak_text_color),
+    );
+    ui.separator();
+}
+
 impl PopupApp {
     fn new(
         _cc: &eframe::CreationContext<'_>,
@@ -1038,177 +1085,80 @@ impl PopupApp {
         }
     }
 
-    /// Content of the theme selector dropdown popup.
-    fn draw_theme_popup(&mut self, ui: &mut egui::Ui) {
-        let draw_item = |ui: &mut egui::Ui,
-                         label: &str,
-                         is_selected: bool,
-                         fg: egui::Color32,
-                         tc: Option<&ThemeColors>|
-         -> bool {
-            let (rect, response) = ui.allocate_exact_size(
-                egui::vec2(ui.available_width(), 26.0),
-                egui::Sense::click(),
-            );
-
-            let bg = if is_selected {
-                tc.map_or(ui.visuals().selection.bg_fill, |c| c.selection_bg)
-            } else if response.hovered() {
-                tc.map_or(ui.visuals().widgets.hovered.bg_fill, |c| c.widget_hovered_bg)
-            } else {
-                egui::Color32::TRANSPARENT
-            };
-
-            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg);
-
-            let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
-            ui.painter().text(
-                text_pos,
-                egui::Align2::LEFT_CENTER,
-                label,
-                egui::FontId::proportional(14.0),
-                fg,
-            );
-
-            response.clicked()
-        };
-
-        let weak_text = self.theme_colors.as_ref().map_or(ui.visuals().weak_text_color(), |c| c.weak_text_color);
-        let section_label = |ui: &mut egui::Ui, text: &str| {
-            ui.label(
-                egui::RichText::new(text)
-                    .size(11.0)
-                    .color(weak_text),
-            );
-            ui.separator();
-        };
-
-        ui.set_width(160.0);
-        ui.spacing_mut().item_spacing.y = 2.0;
-
-        // ── Themes ──
-        section_label(ui, "THEMES");
-        let themes = [
-            (Theme::Dark, "Dark"),
-            (Theme::Light, "Light"),
-            (Theme::Nord, "Nord"),
-            (Theme::Catppuccin, "Catppuccin"),
-            (Theme::Dracula, "Dracula"),
-        ];
-        for (t_enum, t_name) in &themes {
-            let selected = self.config.general.theme == *t_enum;
+    /// Shared helper: draw a list of enum options, apply setter on selection.
+    fn select_enum<E: Copy + PartialEq, const N: usize>(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: &str,
+        weak_text: egui::Color32,
+        current: E,
+        items: [(E, &str); N],
+        mut setter: impl FnMut(&mut Config, E),
+    ) {
+        section_label(ui, label, weak_text);
+        for (val, name) in &items {
+            let selected = current == *val;
+            let tc = self.theme_colors.as_ref();
             let fg = if selected {
                 egui::Color32::WHITE
             } else {
-                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+                tc.map_or(ui.visuals().text_color(), |c| c.text_color)
             };
-            if draw_item(ui, t_name, selected, fg, self.theme_colors.as_ref()) {
-                self.config.general.set_theme(*t_enum);
+            if draw_theme_item(ui, name, selected, fg, tc) {
+                setter(&mut self.config, *val);
                 theme::apply_theme_and_fonts(ui.ctx(), &self.config);
                 self.theme_colors = ThemeColors::from_config(&self.config);
                 let _ = self.store.save_config(&self.config);
                 ui.close_menu();
             }
         }
+    }
 
-        // ── Fonts ──
-        ui.add_space(6.0);
-        section_label(ui, "FONTS");
-        let font_presets = [
+    /// Content of the theme selector dropdown popup.
+    fn draw_theme_popup(&mut self, ui: &mut egui::Ui) {
+        ui.set_width(160.0);
+        ui.spacing_mut().item_spacing.y = 2.0;
+
+        let weak_text = self.theme_colors.as_ref().map_or(ui.visuals().weak_text_color(), |c| c.weak_text_color);
+
+        self.select_enum(ui, "THEMES", weak_text, self.config.general.theme, [
+            (Theme::Dark, "Dark"),
+            (Theme::Light, "Light"),
+            (Theme::Nord, "Nord"),
+            (Theme::Catppuccin, "Catppuccin"),
+            (Theme::Dracula, "Dracula"),
+        ], |cfg, t| cfg.general.set_theme(t));
+
+        self.select_enum(ui, "FONTS", weak_text, self.config.general.font_preset, [
             (FontPreset::Default, "System Default"),
             (FontPreset::DejaVu, "DejaVu"),
             (FontPreset::Liberation, "Liberation"),
             (FontPreset::Fira, "Fira Code"),
             (FontPreset::JetBrains, "JetBrains Mono"),
             (FontPreset::Iosevka, "Iosevka"),
-        ];
-        for (f_enum, f_label) in &font_presets {
-            let available = *f_enum == FontPreset::Default
-                || theme::is_font_preset_available(*f_enum);
-            let selected = self.config.general.font_preset == *f_enum;
-            let label = if available {
-                String::from(*f_label)
-            } else {
-                format!("{} (not installed)", f_label)
-            };
-            let fg = if selected {
-                egui::Color32::WHITE
-            } else if !available {
-                self.theme_colors.as_ref().map_or(egui::Color32::GRAY, |c| c.weak_text_color)
-            } else {
-                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
-            };
-            if draw_item(ui, &label, selected, fg, self.theme_colors.as_ref()) {
-                if available || selected {
-                    self.config.general.set_font_preset(*f_enum);
-                    theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                    let _ = self.store.save_config(&self.config);
-                    ui.close_menu();
-                }
-            }
-        }
+        ], |cfg, f| cfg.general.set_font_preset(f));
 
-        // ── Font Size ──
-        ui.add_space(6.0);
-        section_label(ui, "FONT SIZE");
-        let sizes = [
+        self.select_enum(ui, "FONT SIZE", weak_text, self.config.general.font_size, [
             (FontSize::Small, "Small"),
             (FontSize::Medium, "Medium"),
             (FontSize::Large, "Large"),
-        ];
-        for (s_enum, s_label) in &sizes {
-            let selected = self.config.general.font_size == *s_enum;
-            let fg = if selected {
-                egui::Color32::WHITE
-            } else {
-                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
-            };
-            if draw_item(ui, s_label, selected, fg, self.theme_colors.as_ref()) {
-                self.config.general.set_font_size(*s_enum);
-                theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                let _ = self.store.save_config(&self.config);
-                ui.close_menu();
-            }
-        }
+        ], |cfg, s| cfg.general.set_font_size(s));
 
-        // ── Font Weight ──
-        ui.add_space(6.0);
-        section_label(ui, "FONT WEIGHT");
-        let weights = [
+        self.select_enum(ui, "FONT WEIGHT", weak_text, self.config.general.font_weight, [
             (FontWeight::Normal, "Normal"),
             (FontWeight::Bold, "Bold"),
-        ];
-        for (w_enum, w_label) in &weights {
-            let selected = self.config.general.font_weight == *w_enum;
-            let fg = if selected {
-                egui::Color32::WHITE
-            } else {
-                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
-            };
-            if draw_item(ui, w_label, selected, fg, self.theme_colors.as_ref()) {
-                self.config.general.set_font_weight(*w_enum);
-                theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                let _ = self.store.save_config(&self.config);
-                ui.close_menu();
-            }
-        }
+        ], |cfg, w| cfg.general.set_font_weight(w));
 
         // ── Behavior ──
-        ui.add_space(6.0);
-        section_label(ui, "BEHAVIOR");
+        section_label(ui, "BEHAVIOR", weak_text);
         let keep_search = self.config.general.keep_search_on_reopen;
+        let tc = self.theme_colors.as_ref();
         let fg = if keep_search {
             egui::Color32::WHITE
         } else {
-            self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+            tc.map_or(ui.visuals().text_color(), |c| c.text_color)
         };
-        if draw_item(
-            ui,
-            "Keep search on reopen",
-            keep_search,
-            fg,
-            self.theme_colors.as_ref(),
-        ) {
+        if draw_theme_item(ui, "Keep search on reopen", keep_search, fg, tc) {
             self.config.general.set_keep_search_on_reopen(!keep_search);
             let _ = self.store.save_config(&self.config);
         }
