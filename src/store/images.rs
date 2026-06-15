@@ -82,8 +82,7 @@ impl ImageStore {
         let img = image::RgbaImage::from_raw(w, h, data.to_vec()).ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
         })?;
-        img.save(&filepath)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        img.save(&filepath).map_err(|e| std::io::Error::other(e))?;
 
         let _ = save_thumbnail_to_dir(dir, &filename, &img);
         Ok(filename)
@@ -96,24 +95,12 @@ impl ImageStore {
         w: u32,
         h: u32,
     ) -> Result<String> {
-        std::fs::create_dir_all(dir)?;
-        let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let hash = simple_hash(&data) & 0xFFF;
-        let filename = format!("img_{}_{:03x}.png", ts, hash);
-        let filepath = dir.join(&filename);
-        let img = image::RgbaImage::from_raw(w, h, data).ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "bad RGBA image data")
-        })?;
-        img.save(&filepath)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-        let _ = save_thumbnail_to_dir(dir, &filename, &img);
-        Ok(filename)
+        self.save_to_dir(dir, &data, w, h)
     }
 
     pub(crate) fn load_from_dir(&self, dir: &Path, filename: &str) -> Result<(u32, u32, Vec<u8>)> {
         let path = dir.join(filename);
-        let img = image::open(&path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let img = image::open(&path).map_err(|e| std::io::Error::other(e))?;
         let rgba = img.to_rgba8();
         let (w, h) = rgba.dimensions();
         Ok((w, h, rgba.into_raw()))
@@ -166,7 +153,7 @@ fn save_thumbnail_to_dir(dir: &Path, filename: &str, img: &image::RgbaImage) -> 
     let thumb_path = dir.join(format!("thumb_{}", filename));
     thumb
         .save(&thumb_path)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(|e| std::io::Error::other(e))?;
     Ok(())
 }
 
