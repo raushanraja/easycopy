@@ -89,7 +89,7 @@ fn run_daemon() {
     let dirs = Directories::discover();
     let store = Store::new(dirs);
     let config = store.load_config();
-    theme::set_debug_logging(config.general.debug_logging());
+    theme::set_debug_logging(config.general.debug_logging);
 
     let image_store = store.images();
     let _ = std::fs::create_dir_all(store.data_dir());
@@ -153,8 +153,8 @@ fn run_daemon() {
     }
 
     let mut history = HistoryManager::new(
-        config.general.max_text_items(),
-        config.general.max_image_items(),
+        config.general.max_text_items,
+        config.general.max_image_items,
     );
     history.set_items(store.load_history());
     let _ = image_store.cleanup_orphaned(history.items());
@@ -163,13 +163,13 @@ fn run_daemon() {
 
     use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
     let hotkey_mgr = GlobalHotKeyManager::new().ok();
-    let parsed_hotkey = parse_hotkey(config.general.hotkey());
+    let parsed_hotkey = parse_hotkey(&config.general.hotkey);
     let mut hotkey_registered = false;
 
     if let (Some(ref mgr), Some(hk)) = (&hotkey_mgr, parsed_hotkey) {
         match mgr.register(hk) {
             Ok(()) => {
-                eprintln!("[daemon] hotkey registered: {}", config.general.hotkey());
+                eprintln!("[daemon] hotkey registered: {}", config.general.hotkey);
                 hotkey_registered = true;
             }
             Err(e) => {
@@ -180,7 +180,7 @@ fn run_daemon() {
     } else {
         eprintln!(
             "[daemon] warning: could not parse hotkey '{}', running without hotkey",
-            config.general.hotkey(),
+            config.general.hotkey,
         );
         eprintln!("[daemon] you can still use: easycopy --popup");
     }
@@ -195,12 +195,12 @@ fn run_daemon() {
 
     eprintln!(
         "[daemon] started — max {} text / {} images",
-        config.general.max_text_items(), config.general.max_image_items(),
+        config.general.max_text_items, config.general.max_image_items,
     );
 
     let hotkey_rx = GlobalHotKeyEvent::receiver();
 
-    let poll_interval = config.general.poll_interval_ms();
+    let poll_interval = config.general.poll_interval_ms;
     let tick_ms = 50;
     let ticks_per_poll = (poll_interval / tick_ms).max(1);
     let mut tick_count = 0u64;
@@ -226,8 +226,8 @@ fn run_daemon() {
                             }
                         }
                     };
-                    if write_ok && config.general.auto_paste() {
-                        std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms()));
+                    if write_ok && config.general.auto_paste {
+                        std::thread::sleep(Duration::from_millis(config.general.paste_delay_ms));
                         let _ = std::process::Command::new("xdotool")
                             .args(["key", "ctrl+v"])
                             .status();
@@ -244,7 +244,7 @@ fn run_daemon() {
                 eprintln!("[daemon] X11 events: {:?}", x11_events);
             }
             for event in &x11_events {
-                if *event == SelectionEvent::Clipboard && config.general.enable_clipping() {
+                if *event == SelectionEvent::Clipboard && config.general.enable_clipping {
                     if theme::is_debug_logging() {
                         eprintln!("[daemon] clipboard event → checking monitor");
                     }
@@ -263,7 +263,7 @@ fn run_daemon() {
             tick_count += 1;
             if tick_count >= ticks_per_poll {
                 tick_count = 0;
-                if config.general.enable_clipping() {
+                if config.general.enable_clipping {
                     if let Some(raw) = monitor.poll() {
                         let _ = process_clip_item(raw, &mut history, &mut last_history_save, &image_store, &store);
                     }

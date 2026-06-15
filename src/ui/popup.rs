@@ -29,8 +29,8 @@ const FOOTER_HELP: &str =
 /// If `should_paste` is set to true, this function simulates Ctrl+V after
 /// the user chooses an item.
 pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
-    let width = config.general.popup_width();
-    let height = config.general.popup_height();
+    let width = config.general.popup_width;
+    let height = config.general.popup_height;
     let image_store = store.images();
     let image_store_for_paste = image_store.clone();
 
@@ -45,10 +45,10 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
     };
 
     let should_paste_after_window = should_paste.clone();
-    let auto_paste = config.general.auto_paste();
-    let paste_delay_ms = config.general.paste_delay_ms();
+    let auto_paste = config.general.auto_paste;
+    let paste_delay_ms = config.general.paste_delay_ms;
 
-    theme::set_debug_logging(config.general.debug_logging());
+    theme::set_debug_logging(config.general.debug_logging);
 
     let selected_item = Arc::new(std::sync::Mutex::new(None));
     let selected_item_for_app = selected_item.clone();
@@ -198,7 +198,7 @@ impl PopupApp {
 
         // History load + cache computation thread
         let (clip_tx, clip_rx) = std::sync::mpsc::channel();
-        let preview_chars = config.general.preview_chars();
+        let preview_chars = config.general.preview_chars;
         let store_for_history = store.clone();
         std::thread::spawn(move || {
             let clips: Vec<ClipItem> = store_for_history.load_history().into_iter().collect();
@@ -310,7 +310,7 @@ impl PopupApp {
             icon_loading: HashSet::new(),
             should_paste,
             selected_item_out,
-            preview_chars: config.general.preview_chars(),
+            preview_chars: config.general.preview_chars,
             focus_search_once: true,
             scroll_to_selected_once: false,
             config,
@@ -344,6 +344,16 @@ impl PopupApp {
         self.theme_colors
             .as_ref()
             .map_or(ui.visuals().weak_text_color(), |t| t.weak_text_color)
+    }
+
+    fn shortcut_color(&self, ui: &egui::Ui, is_selected: bool) -> egui::Color32 {
+        if is_selected {
+            self.theme_colors
+                .as_ref()
+                .map_or(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180), |t| t.shortcut_color)
+        } else {
+            self.weak_color(ui)
+        }
     }
 
     fn close_popup(&self, ctx: &egui::Context) {
@@ -420,6 +430,10 @@ impl PopupApp {
         self.clip_cache
             .rebuild_from(&self.clips, self.preview_chars, self.image_store.dir());
 
+        self.rebuild_app_search_cache();
+    }
+
+    fn rebuild_app_search_cache(&mut self) {
         self.cached_app_search = self
             .apps
             .iter()
@@ -626,16 +640,13 @@ impl PopupApp {
         self.cached_browser_action_search = self
             .browser_actions
             .iter()
-            .map(|a| {
-                format!("{} {} {}", a.query, a.url, a.description)
-                    .to_lowercase()
-            })
+            .map(|a| format!("{} {} {}", a.query, a.url, a.description).to_lowercase())
             .collect();
     }
 
     fn draw_header(&mut self, ui: &mut egui::Ui) {
-        let show_main = !self.config.general.hide_main_header();
-        let show_sec = !self.config.general.hide_secondary_header();
+        let show_main = !self.config.general.hide_main_header;
+        let show_sec = !self.config.general.hide_secondary_header;
 
         if !show_main && !show_sec {
             return;
@@ -664,7 +675,7 @@ impl PopupApp {
 
     fn draw_search(&mut self, ui: &mut egui::Ui) {
         let has_no_header =
-            self.config.general.hide_main_header() && self.config.general.hide_secondary_header();
+            self.config.general.hide_main_header && self.config.general.hide_secondary_header;
         let top_margin = if has_no_header { 18.0 } else { 8.0 };
 
         egui::Frame::none()
@@ -676,7 +687,7 @@ impl PopupApp {
             })
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let show_counts = !self.config.general.hide_counts();
+                    let show_counts = !self.config.general.hide_counts;
 
                     let count_width = if show_counts {
                         let clips_digits = self.clips.len().to_string().chars().count();
@@ -883,57 +894,16 @@ impl PopupApp {
                         let mut first_drawn = false;
 
                         if self.config.footer.show_clear {
-                            // Clear History Button (icon-only)
-                            let enabled = !self.clips.is_empty();
-                            let clear_btn_rect = ui
-                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
-                                .0;
-                            let clear_resp = ui.interact(
-                                clear_btn_rect,
-                                ui.id().with("clear_history_btn"),
-                                egui::Sense::click(),
-                            );
-
-                            let fill = if !enabled {
-                                ui.visuals().widgets.noninteractive.bg_fill
-                            } else if clear_resp.clicked() {
-                                ui.visuals().widgets.active.bg_fill
-                            } else if clear_resp.hovered() {
-                                ui.visuals().widgets.hovered.bg_fill
-                            } else {
-                                ui.visuals().widgets.inactive.bg_fill
-                            };
-
-                            let stroke = if !enabled {
-                                ui.visuals().widgets.noninteractive.bg_stroke
-                            } else if clear_resp.hovered() {
-                                ui.visuals().widgets.hovered.bg_stroke
-                            } else {
-                                ui.visuals().widgets.noninteractive.bg_stroke
-                            };
-
-                            ui.painter().rect(
-                                clear_btn_rect,
-                                egui::Rounding::same(8.0),
-                                fill,
-                                stroke,
-                            );
-
-                            let text_color = if !enabled {
-                                self.weak_color(ui)
-                            } else {
-                                ui.visuals().text_color()
-                            };
-
-                            let icon_rect = egui::Rect::from_center_size(
-                                clear_btn_rect.center(),
+                            self.draw_footer_button(
+                                ui,
+                                "clear_history_btn",
+                                32.0,
+                                !self.clips.is_empty(),
+                                self.weak_color(ui),
+                                theme::paint_trash_icon,
                                 egui::vec2(14.0, 14.0),
+                                |this| this.clear_history(),
                             );
-                            theme::paint_trash_icon(ui, icon_rect, text_color);
-
-                            if enabled && clear_resp.clicked() {
-                                self.clear_history();
-                            }
                             first_drawn = true;
                         }
 
@@ -941,50 +911,19 @@ impl PopupApp {
                             if first_drawn {
                                 ui.add_space(8.0);
                             }
-
-                            // Settings Button (opens config)
-                            let settings_btn_rect = ui
-                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
-                                .0;
-                            let settings_resp = ui.interact(
-                                settings_btn_rect,
-                                ui.id().with("settings_btn"),
-                                egui::Sense::click(),
-                            );
-
-                            let settings_fill = if settings_resp.clicked() {
-                                ui.visuals().widgets.active.bg_fill
-                            } else if settings_resp.hovered() {
-                                ui.visuals().widgets.hovered.bg_fill
-                            } else {
-                                ui.visuals().widgets.inactive.bg_fill
-                            };
-
-                            let settings_stroke = if settings_resp.hovered() {
-                                ui.visuals().widgets.hovered.bg_stroke
-                            } else {
-                                ui.visuals().widgets.noninteractive.bg_stroke
-                            };
-
-                            ui.painter().rect(
-                                settings_btn_rect,
-                                egui::Rounding::same(8.0),
-                                settings_fill,
-                                settings_stroke,
-                            );
-
-                            let settings_color = ui.visuals().text_color();
-
-                            let settings_icon_rect = egui::Rect::from_center_size(
-                                settings_btn_rect.center(),
+                            self.draw_footer_button(
+                                ui,
+                                "settings_btn",
+                                32.0,
+                                true,
+                                ui.visuals().text_color(),
+                                theme::paint_settings_icon,
                                 egui::vec2(16.0, 16.0),
+                                |this| {
+                                    let path = this.store.history_path();
+                                    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+                                },
                             );
-                            theme::paint_settings_icon(ui, settings_icon_rect, settings_color);
-
-                            if settings_resp.clicked() {
-                                let path = self.store.history_path();
-                                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
-                            }
                             first_drawn = true;
                         }
 
@@ -992,8 +931,6 @@ impl PopupApp {
                             if first_drawn {
                                 ui.add_space(8.0);
                             }
-
-                            // Theme Selector Button (opens dropdown)
                             let theme_btn_rect = ui
                                 .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::click())
                                 .0;
@@ -1025,285 +962,256 @@ impl PopupApp {
                             );
 
                             let theme_color = ui.visuals().text_color();
-
                             let theme_icon_rect = egui::Rect::from_center_size(
                                 theme_btn_rect.center(),
                                 egui::vec2(16.0, 16.0),
                             );
                             theme::paint_palette_icon(ui, theme_icon_rect, theme_color);
 
-                            let popup_id = ui.make_persistent_id("theme_dropdown");
                             if theme_resp.clicked() {
+                                let popup_id = ui.make_persistent_id("theme_dropdown");
                                 ui.memory_mut(|mem| mem.toggle_popup(popup_id));
                             }
 
                             egui::popup_below_widget(
                                 ui,
-                                popup_id,
+                                ui.make_persistent_id("theme_dropdown"),
                                 &theme_resp,
                                 egui::PopupCloseBehavior::CloseOnClick,
                                 |ui| {
-                                    let draw_item = |ui: &mut egui::Ui,
-                                                     label: &str,
-                                                     is_selected: bool,
-                                                     fg: egui::Color32,
-                                                     tc: Option<&ThemeColors>|
-                                     -> bool {
-                                        let (rect, response) = ui.allocate_exact_size(
-                                            egui::vec2(ui.available_width(), 26.0),
-                                            egui::Sense::click(),
-                                        );
-
-                                        let bg = if is_selected {
-                                            tc.map_or(ui.visuals().selection.bg_fill, |c| {
-                                                c.selection_bg
-                                            })
-                                        } else if response.hovered() {
-                                            tc.map_or(ui.visuals().widgets.hovered.bg_fill, |c| {
-                                                c.widget_hovered_bg
-                                            })
-                                        } else {
-                                            egui::Color32::TRANSPARENT
-                                        };
-
-                                        ui.painter().rect_filled(
-                                            rect,
-                                            egui::Rounding::same(6.0),
-                                            bg,
-                                        );
-
-                                        let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
-                                        ui.painter().text(
-                                            text_pos,
-                                            egui::Align2::LEFT_CENTER,
-                                            label,
-                                            egui::FontId::proportional(14.0),
-                                            fg,
-                                        );
-
-                                        response.clicked()
-                                    };
-
-                                    ui.set_width(160.0);
-                                    ui.spacing_mut().item_spacing.y = 2.0;
-
-                                    // ── Themes ──
-                                    ui.label(
-                                        egui::RichText::new("THEMES").size(11.0).color(
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().weak_text_color(), |c| {
-                                                    c.weak_text_color
-                                                }),
-                                        ),
-                                    );
-                                    ui.separator();
-                                    let themes = [
-                                        (Theme::Dark, "Dark"),
-                                        (Theme::Light, "Light"),
-                                        (Theme::Nord, "Nord"),
-                                        (Theme::Catppuccin, "Catppuccin"),
-                                        (Theme::Dracula, "Dracula"),
-                                    ];
-                                    for (t_enum, t_name) in &themes {
-                                        let selected = self.config.general.theme() == *t_enum;
-                                        let fg = if selected {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().text_color(), |c| c.text_color)
-                                        };
-                                        if draw_item(
-                                            ui,
-                                            t_name,
-                                            selected,
-                                            fg,
-                                            self.theme_colors.as_ref(),
-                                        ) {
-                                            self.config.general.set_theme(*t_enum);
-                                            theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            self.theme_colors =
-                                                ThemeColors::from_config(&self.config);
-                                            let _ = self.store.save_config(&self.config);
-                                            ui.close_menu();
-                                        }
-                                    }
-
-                                    // ── Fonts ──
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new("FONTS").size(11.0).color(
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().weak_text_color(), |c| {
-                                                    c.weak_text_color
-                                                }),
-                                        ),
-                                    );
-                                    ui.separator();
-                                    let font_presets = [
-                                        (FontPreset::Default, "System Default"),
-                                        (FontPreset::DejaVu, "DejaVu"),
-                                        (FontPreset::Liberation, "Liberation"),
-                                        (FontPreset::Fira, "Fira Code"),
-                                        (FontPreset::JetBrains, "JetBrains Mono"),
-                                        (FontPreset::Iosevka, "Iosevka"),
-                                    ];
-                                    for (f_enum, f_label) in &font_presets {
-                                        let available = *f_enum == FontPreset::Default
-                                            || theme::is_font_preset_available(*f_enum);
-                                        let selected = self.config.general.font_preset() == *f_enum;
-                                        let label = if available {
-                                            f_label.to_string()
-                                        } else {
-                                            format!("{} (not installed)", f_label)
-                                        };
-                                        let fg = if selected {
-                                            egui::Color32::WHITE
-                                        } else if !available {
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(egui::Color32::GRAY, |c| c.weak_text_color)
-                                        } else {
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().text_color(), |c| c.text_color)
-                                        };
-                                        if draw_item(
-                                            ui,
-                                            &label,
-                                            selected,
-                                            fg,
-                                            self.theme_colors.as_ref(),
-                                        ) {
-                                            if available || selected {
-                                                self.config.general.set_font_preset(*f_enum);
-                                                theme::apply_theme_and_fonts(
-                                                    ui.ctx(),
-                                                    &self.config,
-                                                );
-                                                let _ = self.store.save_config(&self.config);
-                                                ui.close_menu();
-                                            }
-                                        }
-                                    }
-
-                                    // ── Font Size ──
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new("FONT SIZE").size(11.0).color(
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().weak_text_color(), |c| {
-                                                    c.weak_text_color
-                                                }),
-                                        ),
-                                    );
-                                    ui.separator();
-                                    let sizes = [
-                                        (FontSize::Small, "Small"),
-                                        (FontSize::Medium, "Medium"),
-                                        (FontSize::Large, "Large"),
-                                    ];
-                                    for (s_enum, s_label) in &sizes {
-                                        let selected = self.config.general.font_size() == *s_enum;
-                                        let fg = if selected {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().text_color(), |c| c.text_color)
-                                        };
-                                        if draw_item(
-                                            ui,
-                                            s_label,
-                                            selected,
-                                            fg,
-                                            self.theme_colors.as_ref(),
-                                        ) {
-                                            self.config.general.set_font_size(*s_enum);
-                                            theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            let _ = self.store.save_config(&self.config);
-                                            ui.close_menu();
-                                        }
-                                    }
-
-                                    // ── Font Weight ──
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new("FONT WEIGHT").size(11.0).color(
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().weak_text_color(), |c| {
-                                                    c.weak_text_color
-                                                }),
-                                        ),
-                                    );
-                                    ui.separator();
-                                    let weights = [
-                                        (FontWeight::Normal, "Normal"),
-                                        (FontWeight::Bold, "Bold"),
-                                    ];
-                                    for (w_enum, w_label) in &weights {
-                                        let selected = self.config.general.font_weight() == *w_enum;
-                                        let fg = if selected {
-                                            egui::Color32::WHITE
-                                        } else {
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().text_color(), |c| c.text_color)
-                                        };
-                                        if draw_item(
-                                            ui,
-                                            w_label,
-                                            selected,
-                                            fg,
-                                            self.theme_colors.as_ref(),
-                                        ) {
-                                            self.config.general.set_font_weight(*w_enum);
-                                            theme::apply_theme_and_fonts(ui.ctx(), &self.config);
-                                            let _ = self.store.save_config(&self.config);
-                                            ui.close_menu();
-                                        }
-                                    }
-
-                                    // ── Behavior ──
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new("BEHAVIOR").size(11.0).color(
-                                            self.theme_colors
-                                                .as_ref()
-                                                .map_or(ui.visuals().weak_text_color(), |c| {
-                                                    c.weak_text_color
-                                                }),
-                                        ),
-                                    );
-                                    ui.separator();
-                                    let keep_search = self.config.general.keep_search_on_reopen();
-                                    let fg = if keep_search {
-                                        egui::Color32::WHITE
-                                    } else {
-                                        self.theme_colors
-                                            .as_ref()
-                                            .map_or(ui.visuals().text_color(), |c| c.text_color)
-                                    };
-                                    if draw_item(
-                                        ui,
-                                        "Keep search on reopen",
-                                        keep_search,
-                                        fg,
-                                        self.theme_colors.as_ref(),
-                                    ) {
-                                        self.config.general.set_keep_search_on_reopen(!keep_search);
-                                        let _ = self.store.save_config(&self.config);
-                                    }
+                                    self.draw_theme_popup(ui);
                                 },
                             );
                         }
                     });
                 });
             });
+    }
+
+    /// Draws a footer icon button with hover/active states.
+    /// `icon_fn` receives the painter and icon rect to draw the icon.
+    fn draw_footer_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        size: f32,
+        enabled: bool,
+        icon_color: egui::Color32,
+        icon_fn: impl FnOnce(&mut egui::Ui, egui::Rect, egui::Color32),
+        icon_size: egui::Vec2,
+        on_click: impl FnOnce(&mut Self),
+    ) {
+        let btn_rect = ui
+            .allocate_exact_size(egui::vec2(size, size), egui::Sense::click())
+            .0;
+        let resp = ui.interact(btn_rect, ui.id().with(id), egui::Sense::click());
+
+        let fill = if !enabled {
+            ui.visuals().widgets.noninteractive.bg_fill
+        } else if resp.clicked() {
+            ui.visuals().widgets.active.bg_fill
+        } else if resp.hovered() {
+            ui.visuals().widgets.hovered.bg_fill
+        } else {
+            ui.visuals().widgets.inactive.bg_fill
+        };
+
+        let stroke = if !enabled || !resp.hovered() {
+            ui.visuals().widgets.noninteractive.bg_stroke
+        } else {
+            ui.visuals().widgets.hovered.bg_stroke
+        };
+
+        ui.painter().rect(
+            btn_rect,
+            egui::Rounding::same(8.0),
+            fill,
+            stroke,
+        );
+
+        let color = if !enabled { self.weak_color(ui) } else { icon_color };
+        let icon_rect = egui::Rect::from_center_size(btn_rect.center(), icon_size);
+        icon_fn(ui, icon_rect, color);
+
+        if enabled && resp.clicked() {
+            on_click(self);
+        }
+    }
+
+    /// Content of the theme selector dropdown popup.
+    fn draw_theme_popup(&mut self, ui: &mut egui::Ui) {
+        let draw_item = |ui: &mut egui::Ui,
+                         label: &str,
+                         is_selected: bool,
+                         fg: egui::Color32,
+                         tc: Option<&ThemeColors>|
+         -> bool {
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), 26.0),
+                egui::Sense::click(),
+            );
+
+            let bg = if is_selected {
+                tc.map_or(ui.visuals().selection.bg_fill, |c| c.selection_bg)
+            } else if response.hovered() {
+                tc.map_or(ui.visuals().widgets.hovered.bg_fill, |c| c.widget_hovered_bg)
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+
+            ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg);
+
+            let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
+            ui.painter().text(
+                text_pos,
+                egui::Align2::LEFT_CENTER,
+                label,
+                egui::FontId::proportional(14.0),
+                fg,
+            );
+
+            response.clicked()
+        };
+
+        let weak_text = self.theme_colors.as_ref().map_or(ui.visuals().weak_text_color(), |c| c.weak_text_color);
+        let section_label = |ui: &mut egui::Ui, text: &str| {
+            ui.label(
+                egui::RichText::new(text)
+                    .size(11.0)
+                    .color(weak_text),
+            );
+            ui.separator();
+        };
+
+        ui.set_width(160.0);
+        ui.spacing_mut().item_spacing.y = 2.0;
+
+        // ── Themes ──
+        section_label(ui, "THEMES");
+        let themes = [
+            (Theme::Dark, "Dark"),
+            (Theme::Light, "Light"),
+            (Theme::Nord, "Nord"),
+            (Theme::Catppuccin, "Catppuccin"),
+            (Theme::Dracula, "Dracula"),
+        ];
+        for (t_enum, t_name) in &themes {
+            let selected = self.config.general.theme == *t_enum;
+            let fg = if selected {
+                egui::Color32::WHITE
+            } else {
+                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+            };
+            if draw_item(ui, t_name, selected, fg, self.theme_colors.as_ref()) {
+                self.config.general.set_theme(*t_enum);
+                theme::apply_theme_and_fonts(ui.ctx(), &self.config);
+                self.theme_colors = ThemeColors::from_config(&self.config);
+                let _ = self.store.save_config(&self.config);
+                ui.close_menu();
+            }
+        }
+
+        // ── Fonts ──
+        ui.add_space(6.0);
+        section_label(ui, "FONTS");
+        let font_presets = [
+            (FontPreset::Default, "System Default"),
+            (FontPreset::DejaVu, "DejaVu"),
+            (FontPreset::Liberation, "Liberation"),
+            (FontPreset::Fira, "Fira Code"),
+            (FontPreset::JetBrains, "JetBrains Mono"),
+            (FontPreset::Iosevka, "Iosevka"),
+        ];
+        for (f_enum, f_label) in &font_presets {
+            let available = *f_enum == FontPreset::Default
+                || theme::is_font_preset_available(*f_enum);
+            let selected = self.config.general.font_preset == *f_enum;
+            let label = if available {
+                String::from(*f_label)
+            } else {
+                format!("{} (not installed)", f_label)
+            };
+            let fg = if selected {
+                egui::Color32::WHITE
+            } else if !available {
+                self.theme_colors.as_ref().map_or(egui::Color32::GRAY, |c| c.weak_text_color)
+            } else {
+                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+            };
+            if draw_item(ui, &label, selected, fg, self.theme_colors.as_ref()) {
+                if available || selected {
+                    self.config.general.set_font_preset(*f_enum);
+                    theme::apply_theme_and_fonts(ui.ctx(), &self.config);
+                    let _ = self.store.save_config(&self.config);
+                    ui.close_menu();
+                }
+            }
+        }
+
+        // ── Font Size ──
+        ui.add_space(6.0);
+        section_label(ui, "FONT SIZE");
+        let sizes = [
+            (FontSize::Small, "Small"),
+            (FontSize::Medium, "Medium"),
+            (FontSize::Large, "Large"),
+        ];
+        for (s_enum, s_label) in &sizes {
+            let selected = self.config.general.font_size == *s_enum;
+            let fg = if selected {
+                egui::Color32::WHITE
+            } else {
+                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+            };
+            if draw_item(ui, s_label, selected, fg, self.theme_colors.as_ref()) {
+                self.config.general.set_font_size(*s_enum);
+                theme::apply_theme_and_fonts(ui.ctx(), &self.config);
+                let _ = self.store.save_config(&self.config);
+                ui.close_menu();
+            }
+        }
+
+        // ── Font Weight ──
+        ui.add_space(6.0);
+        section_label(ui, "FONT WEIGHT");
+        let weights = [
+            (FontWeight::Normal, "Normal"),
+            (FontWeight::Bold, "Bold"),
+        ];
+        for (w_enum, w_label) in &weights {
+            let selected = self.config.general.font_weight == *w_enum;
+            let fg = if selected {
+                egui::Color32::WHITE
+            } else {
+                self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+            };
+            if draw_item(ui, w_label, selected, fg, self.theme_colors.as_ref()) {
+                self.config.general.set_font_weight(*w_enum);
+                theme::apply_theme_and_fonts(ui.ctx(), &self.config);
+                let _ = self.store.save_config(&self.config);
+                ui.close_menu();
+            }
+        }
+
+        // ── Behavior ──
+        ui.add_space(6.0);
+        section_label(ui, "BEHAVIOR");
+        let keep_search = self.config.general.keep_search_on_reopen;
+        let fg = if keep_search {
+            egui::Color32::WHITE
+        } else {
+            self.theme_colors.as_ref().map_or(ui.visuals().text_color(), |c| c.text_color)
+        };
+        if draw_item(
+            ui,
+            "Keep search on reopen",
+            keep_search,
+            fg,
+            self.theme_colors.as_ref(),
+        ) {
+            self.config.general.set_keep_search_on_reopen(!keep_search);
+            let _ = self.store.save_config(&self.config);
+        }
     }
 
     fn draw_display_row(&mut self, ui: &mut egui::Ui, row: usize) -> bool {
@@ -1388,6 +1296,7 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
+        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1398,19 +1307,15 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming() {
-                    let bar_width = 4.0;
-                    let bar_height = 24.0;
+                if is_selected && self.config.general.enable_theming {
                     let bar_rect = egui::Rect::from_center_size(
                         egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
-                        egui::vec2(bar_width, bar_height),
+                        egui::vec2(4.0, 24.0),
                     );
                     ui.painter().rect_filled(
                         bar_rect,
                         egui::Rounding::same(2.0),
-                        self.theme_colors
-                            .as_ref()
-                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
+                        selection_bar_color,
                     );
                 }
 
@@ -1482,21 +1387,11 @@ impl PopupApp {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    let shortcut_color = if is_selected {
-                                        self.theme_colors.as_ref().map_or(
-                                            egui::Color32::from_rgba_unmultiplied(
-                                                255, 255, 255, 180,
-                                            ),
-                                            |t| t.shortcut_color,
-                                        )
-                                    } else {
-                                        self.weak_color(ui)
-                                    };
                                     ui.label(
                                         egui::RichText::new(format!("^{}", row + 1))
                                             .size(13.0)
                                             .monospace()
-                                            .color(shortcut_color),
+                                            .color(self.shortcut_color(ui, is_selected)),
                                     );
                                 },
                             );
@@ -1561,21 +1456,11 @@ impl PopupApp {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    let shortcut_color = if is_selected {
-                                        self.theme_colors.as_ref().map_or(
-                                            egui::Color32::from_rgba_unmultiplied(
-                                                255, 255, 255, 180,
-                                            ),
-                                            |t| t.shortcut_color,
-                                        )
-                                    } else {
-                                        self.weak_color(ui)
-                                    };
                                     ui.label(
                                         egui::RichText::new(format!("^{}", row + 1))
                                             .size(13.0)
                                             .monospace()
-                                            .color(shortcut_color),
+                                            .color(self.shortcut_color(ui, is_selected)),
                                     );
                                 },
                             );
@@ -1608,6 +1493,24 @@ impl PopupApp {
             self.scroll_to_selected_once = false;
         }
 
+        // Resolve icon state before drawing to avoid borrow conflicts
+        let icon_kind = app.icon_path.as_ref().map(|path| {
+            if self.app_icon_textures.contains_key(path) {
+                "loaded"
+            } else if self.icon_loading.contains(path.as_str()) {
+                "loading"
+            } else {
+                "request"
+            }
+        });
+
+        // Issue icon load request before the draw scope
+        if let Some("request") = icon_kind.as_deref() {
+            let path = app.icon_path.as_ref().unwrap().clone();
+            self.icon_loading.insert(path.clone());
+            let _ = self.icon_req_tx.send(path);
+        }
+
         let theme = self.theme_colors.as_ref();
 
         let fill = if is_selected {
@@ -1634,6 +1537,7 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
+        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1644,40 +1548,30 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming() {
-                    let bar_width = 4.0;
-                    let bar_height = 24.0;
+                if is_selected && self.config.general.enable_theming {
                     let bar_rect = egui::Rect::from_center_size(
                         egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
-                        egui::vec2(bar_width, bar_height),
+                        egui::vec2(4.0, 24.0),
                     );
                     ui.painter().rect_filled(
                         bar_rect,
                         egui::Rounding::same(2.0),
-                        self.theme_colors
-                            .as_ref()
-                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
+                        selection_bar_color,
                     );
                 }
 
                 ui.horizontal(|ui| {
-                    if let Some(ref icon_path) = app.icon_path {
-                        if let Some(tex) = self.app_icon_textures.get(icon_path) {
+                    match icon_kind.as_deref() {
+                        Some("loaded") => {
+                            let path = app.icon_path.as_ref().unwrap();
+                            let tex = self.app_icon_textures.get(path).unwrap();
                             ui.add(
                                 egui::Image::new(tex)
                                     .fit_to_exact_size(egui::vec2(36.0, 36.0))
                                     .rounding(egui::Rounding::same(6.0)),
                             );
-                        } else if self.icon_loading.contains(icon_path.as_str()) {
-                            theme::draw_icon_badge(
-                                ui,
-                                "application",
-                                is_selected,
-                                self.theme_colors.as_ref(),
-                            );
-                        } else {
-                            self.icon_loading.insert(icon_path.clone());
-                            let _ = self.icon_req_tx.send(icon_path.clone());
+                        }
+                        _ => {
                             theme::draw_icon_badge(
                                 ui,
                                 "application",
@@ -1685,13 +1579,6 @@ impl PopupApp {
                                 self.theme_colors.as_ref(),
                             );
                         }
-                    } else {
-                        theme::draw_icon_badge(
-                            ui,
-                            "application",
-                            is_selected,
-                            self.theme_colors.as_ref(),
-                        );
                     }
                     ui.add_space(8.0);
 
@@ -1767,6 +1654,7 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
+        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1777,19 +1665,15 @@ impl PopupApp {
                 ui.set_width(ui.available_width());
                 ui.set_height(row_height - 20.0);
 
-                if is_selected && self.config.general.enable_theming() {
-                    let bar_width = 4.0;
-                    let bar_height = 24.0;
+                if is_selected && self.config.general.enable_theming {
                     let bar_rect = egui::Rect::from_center_size(
                         egui::pos2(ui.min_rect().left() - 12.0, ui.min_rect().center().y),
-                        egui::vec2(bar_width, bar_height),
+                        egui::vec2(4.0, 24.0),
                     );
                     ui.painter().rect_filled(
                         bar_rect,
                         egui::Rounding::same(2.0),
-                        self.theme_colors
-                            .as_ref()
-                            .map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar),
+                        selection_bar_color,
                     );
                 }
 
@@ -2216,25 +2100,14 @@ impl eframe::App for PopupApp {
         if !self.apps_loaded {
             if let Ok(apps) = self.app_rx.try_recv() {
                 self.apps = apps;
-                self.cached_app_search = self
-                    .apps
-                    .iter()
-                    .map(|app| {
-                        format!(
-                            "{} {} {}",
-                            app.name.to_lowercase(),
-                            app.comment.to_lowercase(),
-                            app.exec.to_lowercase()
-                        )
-                    })
-                    .collect();
+                self.rebuild_app_search_cache();
                 self.apps_loaded = true;
                 self.apply_filter();
                 ctx.request_repaint();
             }
         }
 
-        if self.config.general.close_on_focus_out() {
+        if self.config.general.close_on_focus_out {
             let focused = ctx.input(|i| i.focused);
             if focused {
                 self.focused_once = true;
@@ -2401,16 +2274,6 @@ fn item_matches_query(item: &ClipItem, q: &str) -> bool {
             .to_lowercase()
             .contains(q),
     }
-}
-
-#[cfg(test)]
-#[allow(dead_code)]
-fn image_subtitle(filename: &str, ts: u64, store: &Store) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    image_subtitle_with_now(filename, ts, now, store)
 }
 
 /// Like `image_subtitle` but uses a pre-cached file size instead of
