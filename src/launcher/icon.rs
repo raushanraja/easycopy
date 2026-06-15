@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 //  ICON RESOLUTION
 // ================================================================
 
+const SIZES: &[&str] = &["48x48", "64x64", "32x32", "24x24", "22x22", "16x16", "scalable"];
+const SUBDIRS: &[&str] = &["apps", "devices", "mimetypes", "actions", "places", "status"];
+const EXTS: &[&str] = &["svg", "png", "xpm"];
+
 /// Resolve an icon name to a file path using the default XDG search dirs.
 pub fn resolve_icon(icon_name: &str) -> Option<String> {
     resolve_icon_in(icon_name, &icon_search_dirs())
@@ -17,28 +21,14 @@ pub fn resolve_icon_in(icon_name: &str, search_paths: &[PathBuf]) -> Option<Stri
         return Some(icon_name.to_string());
     }
 
-    let sizes = &[
-        "48x48", "64x64", "32x32", "24x24", "22x22", "16x16", "scalable",
-    ];
-    let exts = &["svg", "png", "xpm"];
     let icon_lower = icon_name.to_lowercase();
 
     // Strategy 1: direct file probe (avoids read_dir issues)
     for dir in search_paths {
-        for size in sizes {
-            for subdir in &[
-                "apps",
-                "devices",
-                "mimetypes",
-                "actions",
-                "places",
-                "status",
-            ] {
-                for ext in exts {
-                    let candidate = dir
-                        .join(size)
-                        .join(subdir)
-                        .join(format!("{}.{}", icon_name, ext));
+        for size in SIZES {
+            for subdir in SUBDIRS {
+                for ext in EXTS {
+                    let candidate = dir.join(size).join(subdir).join(format!("{}.{}", icon_name, ext));
                     if candidate.exists() {
                         return Some(candidate.to_string_lossy().into_owned());
                     }
@@ -46,7 +36,7 @@ pub fn resolve_icon_in(icon_name: &str, search_paths: &[PathBuf]) -> Option<Stri
             }
         }
         // Flat pixmaps fallback
-        for ext in exts {
+        for ext in EXTS {
             let candidate = dir.join(format!("{}.{}", icon_name, ext));
             if candidate.exists() {
                 return Some(candidate.to_string_lossy().into_owned());
@@ -66,32 +56,19 @@ pub fn resolve_icon_in(icon_name: &str, search_paths: &[PathBuf]) -> Option<Stri
         for entry in entries.into_iter().flatten() {
             let path = entry.path();
             if path.is_dir() {
-                for size in sizes {
-                    for subdir in &[
-                        "apps",
-                        "devices",
-                        "mimetypes",
-                        "actions",
-                        "places",
-                        "status",
-                    ] {
+                for size in SIZES {
+                    for subdir in SUBDIRS {
                         let sub_path = path.join(size).join(subdir);
                         if !sub_path.is_dir() {
                             continue;
                         }
-                        if let Some(found) = find_case_insensitive(&sub_path, &icon_lower, exts) {
+                        if let Some(found) = find_case_insensitive(&sub_path, &icon_lower, EXTS) {
                             return Some(found);
                         }
                     }
                 }
-            } else if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                if stem.eq_ignore_ascii_case(&icon_lower) {
-                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                        if exts.contains(&ext) {
-                            return Some(path.to_string_lossy().into_owned());
-                        }
-                    }
-                }
+            } else if let Some(found) = find_case_insensitive(dir, &icon_lower, EXTS) {
+                return Some(found);
             }
         }
     }
