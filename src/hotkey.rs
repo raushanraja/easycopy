@@ -1,5 +1,20 @@
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 
+/// Letter key codes indexed by (c - 'a'), so 'a'→0, 'b'→1, … 'z'→25.
+const LETTER_CODES: [Code; 26] = [
+    Code::KeyA, Code::KeyB, Code::KeyC, Code::KeyD, Code::KeyE, Code::KeyF,
+    Code::KeyG, Code::KeyH, Code::KeyI, Code::KeyJ, Code::KeyK, Code::KeyL,
+    Code::KeyM, Code::KeyN, Code::KeyO, Code::KeyP, Code::KeyQ, Code::KeyR,
+    Code::KeyS, Code::KeyT, Code::KeyU, Code::KeyV, Code::KeyW, Code::KeyX,
+    Code::KeyY, Code::KeyZ,
+];
+
+/// Digit key codes indexed by digit value, so '0'→0, '1'→1, … '9'→9.
+const DIGIT_CODES: [Code; 10] = [
+    Code::Digit0, Code::Digit1, Code::Digit2, Code::Digit3, Code::Digit4,
+    Code::Digit5, Code::Digit6, Code::Digit7, Code::Digit8, Code::Digit9,
+];
+
 /// Parse a human-readable hotkey string like `Ctrl+Alt+V` into a
 /// `global_hotkey::HotKey`.
 pub fn parse_hotkey(s: &str) -> Option<HotKey> {
@@ -26,43 +41,10 @@ pub fn parse_hotkey(s: &str) -> Option<HotKey> {
             "enter" | "return" => code = Some(Code::Enter),
             "escape" | "esc" => code = Some(Code::Escape),
             key if key.len() == 1 => {
-                code = match key.chars().next().unwrap() {
-                    'a' => Some(Code::KeyA),
-                    'b' => Some(Code::KeyB),
-                    'c' => Some(Code::KeyC),
-                    'd' => Some(Code::KeyD),
-                    'e' => Some(Code::KeyE),
-                    'f' => Some(Code::KeyF),
-                    'g' => Some(Code::KeyG),
-                    'h' => Some(Code::KeyH),
-                    'i' => Some(Code::KeyI),
-                    'j' => Some(Code::KeyJ),
-                    'k' => Some(Code::KeyK),
-                    'l' => Some(Code::KeyL),
-                    'm' => Some(Code::KeyM),
-                    'n' => Some(Code::KeyN),
-                    'o' => Some(Code::KeyO),
-                    'p' => Some(Code::KeyP),
-                    'q' => Some(Code::KeyQ),
-                    'r' => Some(Code::KeyR),
-                    's' => Some(Code::KeyS),
-                    't' => Some(Code::KeyT),
-                    'u' => Some(Code::KeyU),
-                    'v' => Some(Code::KeyV),
-                    'w' => Some(Code::KeyW),
-                    'x' => Some(Code::KeyX),
-                    'y' => Some(Code::KeyY),
-                    'z' => Some(Code::KeyZ),
-                    '0' => Some(Code::Digit0),
-                    '1' => Some(Code::Digit1),
-                    '2' => Some(Code::Digit2),
-                    '3' => Some(Code::Digit3),
-                    '4' => Some(Code::Digit4),
-                    '5' => Some(Code::Digit5),
-                    '6' => Some(Code::Digit6),
-                    '7' => Some(Code::Digit7),
-                    '8' => Some(Code::Digit8),
-                    '9' => Some(Code::Digit9),
+                let c = key.chars().next().unwrap();
+                code = match c {
+                    'a'..='z' => Some(LETTER_CODES[(c as u8 - b'a') as usize]),
+                    '0'..='9' => Some(DIGIT_CODES[(c as u8 - b'0') as usize]),
                     _ => None,
                 };
             }

@@ -21,42 +21,34 @@ pub struct ClipCache {
 impl ClipCache {
     /// Build all caches from a list of clips. Call from a background thread.
     pub fn build_from(clips: &[ClipItem], preview_chars: usize, images_dir: &Path) -> Self {
-        let char_counts: Vec<usize> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.chars().count(),
-                _ => 0,
-            })
-            .collect();
+        let mut char_counts = Vec::with_capacity(clips.len());
+        let mut previews = Vec::with_capacity(clips.len());
+        let mut search = Vec::with_capacity(clips.len());
+        let mut file_sizes = HashMap::new();
 
-        let previews: Vec<String> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => preview_text(content, preview_chars),
-                _ => String::new(),
-            })
-            .collect();
-
-        let search: Vec<String> = clips
-            .iter()
-            .map(|item| match item {
-                ClipItem::Text { content, .. } => content.to_lowercase(),
+        for item in clips {
+            match item {
+                ClipItem::Text { content, .. } => {
+                    char_counts.push(content.chars().count());
+                    previews.push(preview_text(content, preview_chars));
+                    search.push(content.to_lowercase());
+                }
                 ClipItem::Image {
                     width,
                     height,
                     filename,
                     ..
-                } => format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename)
-                    .to_lowercase(),
-            })
-            .collect();
-
-        let mut file_sizes = HashMap::new();
-        for item in clips {
-            if let ClipItem::Image { filename, .. } = item {
-                if !filename.is_empty() && !file_sizes.contains_key(filename) {
-                    if let Ok(meta) = std::fs::metadata(images_dir.join(filename)) {
-                        file_sizes.insert(filename.clone(), meta.len());
+                } => {
+                    char_counts.push(0);
+                    previews.push(String::new());
+                    search.push(
+                        format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename)
+                            .to_lowercase(),
+                    );
+                    if !filename.is_empty() && !file_sizes.contains_key(filename) {
+                        if let Ok(meta) = std::fs::metadata(images_dir.join(filename)) {
+                            file_sizes.insert(filename.clone(), meta.len());
+                        }
                     }
                 }
             }
@@ -72,44 +64,7 @@ impl ClipCache {
 
     /// Rebuild caches from the current clips list (for incremental updates).
     pub fn rebuild_from(&mut self, clips: &[ClipItem], preview_chars: usize, images_dir: &Path) {
-        self.char_counts.clear();
-        self.char_counts
-            .extend(clips.iter().map(|item| match item {
-                ClipItem::Text { content, .. } => content.chars().count(),
-                _ => 0,
-            }));
-
-        self.previews.clear();
-        self.previews.extend(clips.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => preview_text(content, preview_chars),
-            _ => String::new(),
-        }));
-
-        self.search.clear();
-        self.search.extend(clips.iter().map(|item| match item {
-            ClipItem::Text { content, .. } => content.to_lowercase(),
-            ClipItem::Image {
-                width,
-                height,
-                filename,
-                ..
-            } => format!(
-                "{}\u{00d7}{} {}x{} {}",
-                width, height, width, height, filename
-            )
-            .to_lowercase(),
-        }));
-
-        self.file_sizes.clear();
-        for item in clips {
-            if let ClipItem::Image { filename, .. } = item {
-                if !filename.is_empty() && !self.file_sizes.contains_key(filename) {
-                    if let Ok(meta) = std::fs::metadata(images_dir.join(filename)) {
-                        self.file_sizes.insert(filename.clone(), meta.len());
-                    }
-                }
-            }
-        }
+        *self = Self::build_from(clips, preview_chars, images_dir);
     }
 
     pub fn len(&self) -> usize {
