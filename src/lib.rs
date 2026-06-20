@@ -6,6 +6,7 @@ pub mod browser;
 pub mod ui;
 pub mod ipc;
 pub mod config;
+pub mod ai;
 
 // ── Persistence layer ─────────────────────────────────────────────
 
