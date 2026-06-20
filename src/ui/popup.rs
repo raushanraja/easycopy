@@ -433,6 +433,120 @@ impl PopupApp {
         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
     }
 
+    // ── AI chat ───────────────────────────────────────────────────────
+
+    fn persist_chat_state(&self) {
+        let st = crate::ai::session::ChatState {
+            current_session_id: self.chat_session_id.clone(),
+        };
+        let _ = st.save_to_path(&self.chat_state_path);
+    }
+
+    /// Exit chat mode: cancel any in-flight turn and return to search.
+    fn exit_chat(&mut self) {
+        self.chat_active = false;
+        if let Some(c) = self.chat_cancel.take() {
+            c.notify_one();
+        }
+        self.chat_rx = None;
+        self.ai_buffer.clear();
+        self.query.clear();
+        self.apply_filter();
+    }
+
+    /// Send the current query (minus the leading `/`) as a chat prompt.
+    fn send_chat_prompt(&mut self) {
+        let prompt = self.query.trim_start_matches('/').trim().to_string();
+        if prompt.is_empty() {
+            return;
+        }
+        let session_id = match self.chat_session_id.clone() {
+            Some(id) => id,
+            None => {
+                let id = crate::ai::session::new_session_id();
+                self.chat_session_id = Some(id.clone());
+                self.persist_chat_state();
+                id
+            }
+        };
+        self.chat_messages
+            .push(crate::ai::ChatMessage::User(prompt.clone()));
+        self.ai_buffer.clear();
+
+        // Cancel any in-flight turn before starting a new one.
+        if let Some(c) = self.chat_cancel.take() {
+            c.notify_one();
+        }
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = Arc::new(tokio::sync::Notify::new());
+        self.chat_rx = Some(rx);
+        self.chat_cancel = Some(cancel.clone());
+
+        crate::ai::worker::spawn_turn(
+            self.config.ai.clone(),
+            self.chat_db_path.clone(),
+            session_id,
+            prompt,
+            tx,
+            cancel,
+        );
+
+        self.query.clear();
+    }
+
+    fn draw_chat_panel(&mut self, ui: &mut egui::Ui) {
+        let weak_color = self.weak_color(ui);
+        let text_color = ui.visuals().text_color();
+
+        egui::ScrollArea::vertical()
+            .id_source("easycopy_chat")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 8.0;
+
+                ui.horizontal(|ui| {
+                    if ui.button("New chat").clicked() {
+                        self.chat_session_id = Some(crate::ai::session::new_session_id());
+                        self.chat_messages.clear();
+                        self.ai_buffer.clear();
+                        self.persist_chat_state();
+                    }
+                    // "Continue" re-confirms the persisted session id (the
+                    // conversation auto-resumes on popup open via chat_state).
+                    if ui.button("Continue").clicked() {
+                        if let Ok(st) =
+                            crate::ai::session::ChatState::load_from_path(&self.chat_state_path)
+                        {
+                            self.chat_session_id = st.current_session_id;
+                        }
+                    }
+                });
+                ui.add_space(6.0);
+
+                for m in &self.chat_messages {
+                    let (text, color) = match m {
+                        crate::ai::ChatMessage::User(t) => (format!("> {t}"), text_color),
+                        crate::ai::ChatMessage::Assistant(t) => (t.clone(), weak_color),
+                    };
+                    ui.label(egui::RichText::new(text).color(color));
+                }
+
+                if !self.ai_buffer.is_empty() {
+                    ui.label(egui::RichText::new(&self.ai_buffer).color(weak_color));
+                }
+
+                if let Some(crate::ai::ChatMessage::Assistant(t)) = self.chat_messages.last() {
+                    if ui.button("Copy last answer").clicked() {
+                        if let Ok(mut cb) = arboard::Clipboard::new() {
+                            let _ = cb.set_text(t.clone());
+                        }
+                    }
+                }
+            });
+    }
+
     fn apply_filter(&mut self) {
         let (mode, q) = crate::browser::action::filter_query(&self.query);
         if mode == QueryMode::Browser {
@@ -902,6 +1016,11 @@ impl PopupApp {
             .show(ui, |ui| {
                 let weak_color = self.weak_color(ui);
 
+                if self.chat_active {
+                    self.draw_chat_panel(ui);
+                    return;
+                }
+
                 if !self.clips_loaded {
                     draw_empty_state(ui, "Loading…", "Reading clipboard history.", weak_color);
                     ui.ctx().request_repaint(); // keep animating until loaded
@@ -928,6 +1047,15 @@ impl PopupApp {
                             ui.label(egui::RichText::new(format!("→ {}", preview)).size(15.0).color(weak_color));
                         });
                         return;
+                    }
+                    // AI chat fallback: "/foo" with no app matches → chat mode.
+                    if self.config.ai.enable {
+                        let (mode, q) = crate::browser::action::filter_query(&self.query);
+                        if mode == QueryMode::AppsOnly && !q.is_empty() {
+                            self.chat_active = true;
+                            self.draw_chat_panel(ui);
+                            return;
+                        }
                     }
                     draw_empty_state(ui, "No matches", "Try a shorter search term.", weak_color);
                     return;
@@ -2112,6 +2240,9 @@ impl eframe::App for PopupApp {
                 }
             }
             ctx.request_repaint();
+        } else if self.chat_cancel.is_some() {
+            // Turn in flight but no new deltas this frame — keep polling.
+            ctx.request_repaint_after(std::time::Duration::from_millis(30));
         }
 
         if self.config.general.close_on_focus_out {
@@ -2155,6 +2286,10 @@ impl eframe::App for PopupApp {
         });
 
         if close {
+            if self.chat_active {
+                self.exit_chat();
+                return;
+            }
             if self.preview_image.is_some() || self.lightbox_loading.is_some() {
                 self.preview_image = None;
                 self.lightbox_loading = None;
@@ -2170,17 +2305,21 @@ impl eframe::App for PopupApp {
             self.move_selection_up();
         }
         if enter {
-            self.select_and_close(ctx);
-            return;
+            if self.chat_active {
+                self.send_chat_prompt();
+            } else {
+                self.select_and_close(ctx);
+                return;
+            }
         }
-        if del {
+        if del && !self.chat_active {
             self.delete_current();
         }
         if ctrl_k {
             self.query.clear();
             self.apply_filter();
         }
-        if ctrl_o {
+        if ctrl_o && !self.chat_active {
             if let Some((ref filename, _)) = self.preview_image {
                 let _ =
                     crate::browser::open::open_item(&crate::browser::open::OpenTarget::Image(filename.clone()), &self.store);
@@ -2202,7 +2341,7 @@ impl eframe::App for PopupApp {
             }
         }
         if let Some(digit) = select_digit {
-            if digit < self.filtered.len() {
+            if !self.chat_active && digit < self.filtered.len() {
                 self.selected = digit;
                 self.select_and_close(ctx);
                 return;
@@ -2244,6 +2383,7 @@ impl eframe::App for PopupApp {
         if self.clips_loaded
             && self.apps_loaded
             && self.lightbox_loading.is_none()
+            && self.chat_cancel.is_none()
             && !loaded_any
         {
             ctx.request_repaint_after(std::time::Duration::from_secs(60));
