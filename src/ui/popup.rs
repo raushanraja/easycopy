@@ -656,7 +656,7 @@ impl PopupApp {
     }
 
     fn draw_chat_panel(&mut self, ui: &mut egui::Ui) {
-        let scroll_height = (ui.available_height() - 48.0).max(100.0);
+        let scroll_height = (ui.available_height() - 72.0).max(100.0);
 
         egui::ScrollArea::vertical()
             .id_source("easycopy_chat")
