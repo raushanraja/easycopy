@@ -2083,6 +2083,37 @@ impl eframe::App for PopupApp {
             }
         }
 
+        // ── AI chat: drain streamed deltas (two-phase for the borrow checker) ──
+        let mut chat_events: Vec<crate::ai::worker::ChatEvent> = Vec::new();
+        if let Some(rx) = &self.chat_rx {
+            while let Ok(ev) = rx.try_recv() {
+                chat_events.push(ev);
+            }
+        }
+        if !chat_events.is_empty() {
+            for ev in chat_events {
+                match ev {
+                    crate::ai::worker::ChatEvent::Delta(s) => self.ai_buffer.push_str(&s),
+                    crate::ai::worker::ChatEvent::Done => {
+                        if !self.ai_buffer.is_empty() {
+                            self.chat_messages.push(crate::ai::ChatMessage::Assistant(
+                                std::mem::take(&mut self.ai_buffer),
+                            ));
+                        }
+                        self.chat_cancel = None;
+                    }
+                    crate::ai::worker::ChatEvent::Error(e) => {
+                        self.chat_messages.push(crate::ai::ChatMessage::Assistant(format!(
+                            "[error: {e}]"
+                        )));
+                        self.ai_buffer.clear();
+                        self.chat_cancel = None;
+                    }
+                }
+            }
+            ctx.request_repaint();
+        }
+
         if self.config.general.close_on_focus_out {
             let focused = ctx.input(|i| i.focused);
             if focused {
