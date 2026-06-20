@@ -211,6 +211,22 @@ impl Default for AiConfig {
     }
 }
 
+impl AiConfig {
+    pub fn sanitize(&mut self) {
+        if self.model.is_empty() {
+            self.model = match self.provider {
+                AiProvider::Gemini => "gemini-2.5-flash".into(),
+                AiProvider::OpenAI => "gpt-4o-mini".into(),
+                AiProvider::Anthropic => "claude-sonnet-4-6".into(),
+                AiProvider::Ollama => "llama3.2".into(),
+            };
+        }
+        if self.ollama_url.is_empty() {
+            self.ollama_url = "http://localhost:11434".into();
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct Config {
@@ -235,6 +251,7 @@ impl Config {
 
     pub fn sanitize(&mut self) {
         self.general.sanitize();
+        self.ai.sanitize();
     }
 }
 
@@ -327,6 +344,7 @@ poll_interval_ms = 250
                 ..GeneralConfig::default()
             },
             footer: FooterConfig::default(),
+            ai: AiConfig::default(),
             parse_error: None,
         };
         let toml_str = toml::to_string(&cfg).unwrap();

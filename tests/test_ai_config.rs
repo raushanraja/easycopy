@@ -42,3 +42,35 @@ fn ai_provider_serializes_lowercase() {
         "expected lowercase openai, got:\n{s}"
     );
 }
+
+#[test]
+fn sanitize_fills_default_model_per_provider() {
+    let mut c = AiConfig::default();
+    c.provider = AiProvider::Ollama;
+    c.sanitize();
+    assert_eq!(c.model, "llama3.2");
+
+    let mut c = AiConfig::default();
+    c.provider = AiProvider::Gemini;
+    c.sanitize();
+    assert_eq!(c.model, "gemini-2.5-flash");
+
+    let mut c = AiConfig::default();
+    c.provider = AiProvider::OpenAI;
+    c.sanitize();
+    assert_eq!(c.model, "gpt-4o-mini");
+
+    let mut c = AiConfig::default();
+    c.provider = AiProvider::Anthropic;
+    c.sanitize();
+    assert_eq!(c.model, "claude-sonnet-4-6");
+}
+
+#[test]
+fn sanitize_keeps_user_model() {
+    let mut c = AiConfig::default();
+    c.provider = AiProvider::Ollama;
+    c.model = "my-custom-model".into();
+    c.sanitize();
+    assert_eq!(c.model, "my-custom-model");
+}
