@@ -30,7 +30,9 @@ fn index_json_roundtrip_through_storage_helpers() {
     assert_eq!(loaded.len(), 2);
 
     match &loaded[0] {
-        ClipItem::Text { content, timestamp, .. } => {
+        ClipItem::Text {
+            content, timestamp, ..
+        } => {
             assert_eq!(content, "hello");
             assert_eq!(*timestamp, 1234567890);
         }

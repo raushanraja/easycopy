@@ -1,8 +1,8 @@
 use crate::browser::action::BrowserAction;
-use crate::config::Config;
-use crate::config::dirs::Directories;
-use crate::launcher::DesktopApp;
 use crate::clipboard::history::ClipItem;
+use crate::config::dirs::Directories;
+use crate::config::Config;
+use crate::launcher::DesktopApp;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::Result;
@@ -17,7 +17,7 @@ pub mod paths;
 pub use atomic::AtomicWriter;
 pub use images::ImageStore;
 pub use paths::{
-    apps_cache, app_usage, browser_actions as paths_browser_actions, daemon_pid, daemon_socket,
+    app_usage, apps_cache, browser_actions as paths_browser_actions, daemon_pid, daemon_socket,
     history as paths_history,
 };
 

@@ -36,6 +36,10 @@ async fn build_session_service_connects_and_migrates() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("chat.db");
     let svc = easycopy::ai::session::build_session_service(&db).await;
-    assert!(svc.is_ok(), "sqlite session service failed: {:?}", svc.err());
+    assert!(
+        svc.is_ok(),
+        "sqlite session service failed: {:?}",
+        svc.err()
+    );
     assert!(db.exists(), "db file should be created by connect+migrate");
 }

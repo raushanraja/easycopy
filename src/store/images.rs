@@ -1,5 +1,5 @@
-use crate::config::dirs::Directories;
 use crate::clipboard::history::ClipItem;
+use crate::config::dirs::Directories;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::io::Result;

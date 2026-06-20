@@ -6,5 +6,5 @@
 pub mod config;
 pub mod dirs;
 
-pub use config::{Config, FooterConfig, GeneralConfig, FontPreset, FontSize, FontWeight, Theme};
+pub use config::{Config, FontPreset, FontSize, FontWeight, FooterConfig, GeneralConfig, Theme};
 pub use dirs::Directories;

@@ -1,5 +1,5 @@
-use crate::launcher::DesktopApp;
 use crate::config::dirs::Directories;
+use crate::launcher::DesktopApp;
 use crate::store::atomic::AtomicWriter;
 use crate::store::paths;
 use std::collections::HashMap;

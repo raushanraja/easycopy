@@ -44,7 +44,9 @@ fn duplicate_moves_to_front() {
     assert!(hm.add(text("a", 4)));
     assert_eq!(hm.len(), 3);
     match hm.items().front().unwrap() {
-        ClipItem::Text { content, timestamp, .. } => {
+        ClipItem::Text {
+            content, timestamp, ..
+        } => {
             assert_eq!(content, "a");
             assert_eq!(*timestamp, 4);
         }

@@ -1,5 +1,5 @@
-use crate::config::dirs::Directories;
 use crate::clipboard::history::ClipItem;
+use crate::config::dirs::Directories;
 use crate::store::atomic::AtomicWriter;
 use crate::store::paths;
 use std::collections::VecDeque;
@@ -43,10 +43,7 @@ pub fn load_history(dirs: &Directories) -> VecDeque<ClipItem> {
     load_history_from_path(dirs, &paths::history(dirs)).unwrap_or_default()
 }
 
-pub fn load_history_from_path(
-    _dirs: &Directories,
-    path: &Path,
-) -> Result<VecDeque<ClipItem>> {
+pub fn load_history_from_path(_dirs: &Directories, path: &Path) -> Result<VecDeque<ClipItem>> {
     if !path.exists() {
         return Ok(VecDeque::new());
     }

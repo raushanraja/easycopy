@@ -1,8 +1,8 @@
-use easycopy::clipboard::ClipboardMonitor;
 use easycopy::clipboard::history::{ClipItem, HistoryManager};
 use easycopy::clipboard::x11::{SelectionEvent, X11Watcher};
-use easycopy::config::Config;
+use easycopy::clipboard::ClipboardMonitor;
 use easycopy::config::dirs::Directories;
+use easycopy::config::Config;
 use easycopy::hotkey::parse_hotkey;
 use easycopy::ipc;
 use easycopy::launcher::desktop;
@@ -249,7 +249,9 @@ fn drain_ipc_requests(
     config: &Config,
     image_store: &ImageStore,
 ) {
-    let Some(rx) = ipc_rx else { return; };
+    let Some(rx) = ipc_rx else {
+        return;
+    };
     while let Ok(item) = rx.try_recv() {
         if let Ok(mut cb) = arboard::Clipboard::new() {
             let write_ok = match item {

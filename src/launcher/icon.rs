@@ -5,8 +5,17 @@ use std::path::{Path, PathBuf};
 //  ICON RESOLUTION
 // ================================================================
 
-const SIZES: &[&str] = &["48x48", "64x64", "32x32", "24x24", "22x22", "16x16", "scalable"];
-const SUBDIRS: &[&str] = &["apps", "devices", "mimetypes", "actions", "places", "status"];
+const SIZES: &[&str] = &[
+    "48x48", "64x64", "32x32", "24x24", "22x22", "16x16", "scalable",
+];
+const SUBDIRS: &[&str] = &[
+    "apps",
+    "devices",
+    "mimetypes",
+    "actions",
+    "places",
+    "status",
+];
 const EXTS: &[&str] = &["svg", "png", "xpm"];
 
 /// Resolve an icon name to a file path using the default XDG search dirs.
@@ -28,7 +37,10 @@ pub fn resolve_icon_in(icon_name: &str, search_paths: &[PathBuf]) -> Option<Stri
         for size in SIZES {
             for subdir in SUBDIRS {
                 for ext in EXTS {
-                    let candidate = dir.join(size).join(subdir).join(format!("{}.{}", icon_name, ext));
+                    let candidate = dir
+                        .join(size)
+                        .join(subdir)
+                        .join(format!("{}.{}", icon_name, ext));
                     if candidate.exists() {
                         return Some(candidate.to_string_lossy().into_owned());
                     }
@@ -144,7 +156,11 @@ mod tests {
 
         // Create case-different file for CI matching (strategy 2)
         fs::create_dir_all(root.join("64x64").join("apps")).unwrap();
-        fs::write(root.join("64x64").join("apps").join("LibreOffice.png"), b"png").unwrap();
+        fs::write(
+            root.join("64x64").join("apps").join("LibreOffice.png"),
+            b"png",
+        )
+        .unwrap();
 
         root.to_path_buf()
     }

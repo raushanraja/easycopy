@@ -556,7 +556,13 @@ pub fn is_font_preset_available(preset: FontPreset) -> bool {
     let map = FONT_AVAILABILITY.get_or_init(|| {
         let mut m = HashMap::new();
         m.insert(FontPreset::Default, true);
-        for &p in &[FontPreset::DejaVu, FontPreset::Liberation, FontPreset::Fira, FontPreset::JetBrains, FontPreset::Iosevka] {
+        for &p in &[
+            FontPreset::DejaVu,
+            FontPreset::Liberation,
+            FontPreset::Fira,
+            FontPreset::JetBrains,
+            FontPreset::Iosevka,
+        ] {
             let (prop, mono) = resolve_font_paths(p.as_str(), "normal");
             m.insert(p, prop.is_some() || mono.is_some());
         }
@@ -697,8 +703,7 @@ pub fn apply_theme_and_fonts(ctx: &egui::Context, config: &Config) {
     load_custom_fonts(ctx, config);
 
     // --- Font sizes ---
-    let (h_size, b_size, btn_size, s_size, m_size) =
-        font_size_values(config.general.font_size);
+    let (h_size, b_size, btn_size, s_size, m_size) = font_size_values(config.general.font_size);
 
     let mut style = (*ctx.style()).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 8.0);
@@ -840,7 +845,10 @@ pub fn paint_app_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32)
     // Title bar line (across the top portion)
     let title_y = inner.top() + inner.height() * 0.35;
     painter.line_segment(
-        [egui::pos2(inner.left() + 2.5, title_y), egui::pos2(inner.right() - 2.5, title_y)],
+        [
+            egui::pos2(inner.left() + 2.5, title_y),
+            egui::pos2(inner.right() - 2.5, title_y),
+        ],
         stroke,
     );
 
@@ -852,17 +860,17 @@ pub fn paint_app_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32)
     let content_y1 = title_y + inner.height() * 0.2;
     let content_y2 = title_y + inner.height() * 0.45;
     painter.line_segment(
-    [
-        egui::pos2(inner.left() + 4.0, content_y1),
-        egui::pos2(inner.right() - 4.0, content_y1),
-    ],
+        [
+            egui::pos2(inner.left() + 4.0, content_y1),
+            egui::pos2(inner.right() - 4.0, content_y1),
+        ],
         egui::Stroke::new(1.0, color),
     );
     painter.line_segment(
-    [
-        egui::pos2(inner.left() + 4.0, content_y2),
-        egui::pos2(inner.right() - 4.0, content_y2),
-    ],
+        [
+            egui::pos2(inner.left() + 4.0, content_y2),
+            egui::pos2(inner.right() - 4.0, content_y2),
+        ],
         egui::Stroke::new(1.0, color),
     );
 }

@@ -57,10 +57,7 @@ impl X11Watcher {
         // Negotiate XFixes extension version (required before using requests)
         let ver = conn.xfixes_query_version(2, 0).ok()?.reply().ok()?;
         if ver.major_version < 2 {
-            eprintln!(
-                "[x11] XFixes {} too old, need ≥2.0",
-                ver.major_version
-            );
+            eprintln!("[x11] XFixes {} too old, need ≥2.0", ver.major_version);
             return None;
         }
 

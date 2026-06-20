@@ -243,9 +243,24 @@ mod tests {
     #[test]
     fn search_sorts_by_use_count() {
         let actions = vec![
-            BrowserAction { query: "a".into(), url: "http://a.com".into(), description: "A".into(), use_count: 1 },
-            BrowserAction { query: "b".into(), url: "http://b.com".into(), description: "B".into(), use_count: 5 },
-            BrowserAction { query: "c".into(), url: "http://c.com".into(), description: "C".into(), use_count: 3 },
+            BrowserAction {
+                query: "a".into(),
+                url: "http://a.com".into(),
+                description: "A".into(),
+                use_count: 1,
+            },
+            BrowserAction {
+                query: "b".into(),
+                url: "http://b.com".into(),
+                description: "B".into(),
+                use_count: 5,
+            },
+            BrowserAction {
+                query: "c".into(),
+                url: "http://c.com".into(),
+                description: "C".into(),
+                use_count: 3,
+            },
         ];
         let indices = search(&actions, "http");
         // "http" matches all three (all URLs contain it); sorted by use_count desc
@@ -257,19 +272,34 @@ mod tests {
 
     #[test]
     fn search_empty_query_returns_empty() {
-        let actions = vec![
-            BrowserAction { query: "a".into(), url: "http://a".into(), description: "A".into(), use_count: 0 },
-        ];
+        let actions = vec![BrowserAction {
+            query: "a".into(),
+            url: "http://a".into(),
+            description: "A".into(),
+            use_count: 0,
+        }];
         assert!(search(&actions, "").is_empty());
         assert!(search(&actions, ":").is_empty());
     }
 
     #[test]
     fn filter_query_modes() {
-        assert_eq!(filter_query("/firefox"), (QueryMode::AppsOnly, "firefox".into()));
-        assert_eq!(filter_query(" / terminal "), (QueryMode::AppsOnly, "terminal".into()));
-        assert_eq!(filter_query(":google"), (QueryMode::Browser, "google".into()));
-        assert_eq!(filter_query(" : hello "), (QueryMode::Browser, "hello".into()));
+        assert_eq!(
+            filter_query("/firefox"),
+            (QueryMode::AppsOnly, "firefox".into())
+        );
+        assert_eq!(
+            filter_query(" / terminal "),
+            (QueryMode::AppsOnly, "terminal".into())
+        );
+        assert_eq!(
+            filter_query(":google"),
+            (QueryMode::Browser, "google".into())
+        );
+        assert_eq!(
+            filter_query(" : hello "),
+            (QueryMode::Browser, "hello".into())
+        );
         assert_eq!(filter_query("hello"), (QueryMode::Normal, "hello".into()));
         assert_eq!(filter_query("  "), (QueryMode::Normal, "".into()));
     }

@@ -42,8 +42,11 @@ impl ClipCache {
                     char_counts.push(0);
                     previews.push(String::new());
                     search.push(
-                        format!("{}\u{00d7}{} {}x{} {}", width, height, width, height, filename)
-                            .to_lowercase(),
+                        format!(
+                            "{}\u{00d7}{} {}x{} {}",
+                            width, height, width, height, filename
+                        )
+                        .to_lowercase(),
                     );
                     if !filename.is_empty() && !file_sizes.contains_key(filename) {
                         if let Ok(meta) = std::fs::metadata(images_dir.join(filename)) {

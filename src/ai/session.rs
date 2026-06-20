@@ -56,4 +56,3 @@ pub async fn build_session_service(
     svc.migrate().await?;
     Ok(Arc::new(svc))
 }
-

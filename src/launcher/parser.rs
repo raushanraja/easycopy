@@ -264,7 +264,10 @@ Name=Second
     #[test]
     fn strip_exec_codes_preserves_regular_args() {
         assert_eq!(strip_exec_codes("app --flag value"), "app --flag value");
-        assert_eq!(strip_exec_codes("app -d /path/to/dir"), "app -d /path/to/dir");
+        assert_eq!(
+            strip_exec_codes("app -d /path/to/dir"),
+            "app -d /path/to/dir"
+        );
     }
 
     #[test]

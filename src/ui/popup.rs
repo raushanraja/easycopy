@@ -1,8 +1,8 @@
 use crate::browser::action::{BrowserAction, QueryMode};
 use crate::clipboard::cache::ClipCache;
+use crate::clipboard::history::ClipItem;
 use crate::config::{Config, FontPreset, FontSize, FontWeight, Theme};
 use crate::launcher::DesktopApp;
-use crate::clipboard::history::ClipItem;
 use crate::store::images::ImageStore;
 use crate::store::Store;
 use crate::ui::theme::{self, ThemeColors};
@@ -21,7 +21,8 @@ enum DisplayItem {
     BrowserAction { action_idx: usize },
 }
 
-const SEARCH_HINT: &str = "Search clips, image size, or filename… / for apps · : for browser (saves history)";
+const SEARCH_HINT: &str =
+    "Search clips, image size, or filename… / for apps · : for browser (saves history)";
 const FOOTER_HELP: &str =
     "Esc close · Enter paste · Del remove · Ctrl+O open · Ctrl+K clear search · : browser";
 
@@ -76,7 +77,8 @@ pub fn run_popup(config: Config, should_paste: Arc<AtomicBool>, store: Store) {
     };
 
     if let Some(item) = item_to_write {
-        let sent_via_ipc = is_daemon_running(&store) && crate::ipc::send_paste_request(&store, &item).is_ok();
+        let sent_via_ipc =
+            is_daemon_running(&store) && crate::ipc::send_paste_request(&store, &item).is_ok();
         if !sent_via_ipc {
             if let Ok(mut cb) = arboard::Clipboard::new() {
                 let is_image = item.is_image();
@@ -201,20 +203,21 @@ fn draw_theme_item(
     fg: egui::Color32,
     theme_colors: Option<&ThemeColors>,
 ) -> bool {
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), 26.0),
-        egui::Sense::click(),
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), egui::Sense::click());
 
     let bg = if is_selected {
         theme_colors.map_or(ui.visuals().selection.bg_fill, |c| c.selection_bg)
     } else if response.hovered() {
-        theme_colors.map_or(ui.visuals().widgets.hovered.bg_fill, |c| c.widget_hovered_bg)
+        theme_colors.map_or(ui.visuals().widgets.hovered.bg_fill, |c| {
+            c.widget_hovered_bg
+        })
     } else {
         egui::Color32::TRANSPARENT
     };
 
-    ui.painter().rect_filled(rect, egui::Rounding::same(6.0), bg);
+    ui.painter()
+        .rect_filled(rect, egui::Rounding::same(6.0), bg);
 
     let text_pos = rect.left_center() + egui::vec2(8.0, 0.0);
     ui.painter().text(
@@ -230,11 +233,7 @@ fn draw_theme_item(
 
 /// Section label + separator for the theme popup.
 fn section_label(ui: &mut egui::Ui, text: &str, weak_text_color: egui::Color32) {
-    ui.label(
-        egui::RichText::new(text)
-            .size(11.0)
-            .color(weak_text_color),
-    );
+    ui.label(egui::RichText::new(text).size(11.0).color(weak_text_color));
     ui.separator();
 }
 
@@ -258,8 +257,7 @@ impl PopupApp {
         let store_for_history = store.clone();
         std::thread::spawn(move || {
             let clips: Vec<ClipItem> = store_for_history.load_history().into_iter().collect();
-            let cache =
-                ClipCache::build_from(&clips, preview_chars, &images_dir_for_sizes);
+            let cache = ClipCache::build_from(&clips, preview_chars, &images_dir_for_sizes);
             let _ = clip_tx.send((clips, cache));
         });
 
@@ -359,10 +357,9 @@ impl PopupApp {
         let dirs = crate::config::dirs::Directories::discover();
         let chat_db_path = crate::store::paths::chat_db(&dirs);
         let chat_state_path = crate::store::paths::chat_state(&dirs);
-        let chat_session_id =
-            crate::ai::session::ChatState::load_from_path(&chat_state_path)
-                .ok()
-                .and_then(|s| s.current_session_id);
+        let chat_session_id = crate::ai::session::ChatState::load_from_path(&chat_state_path)
+            .ok()
+            .and_then(|s| s.current_session_id);
 
         Self {
             clips: Vec::new(),
@@ -421,9 +418,10 @@ impl PopupApp {
 
     fn shortcut_color(&self, ui: &egui::Ui, is_selected: bool) -> egui::Color32 {
         if is_selected {
-            self.theme_colors
-                .as_ref()
-                .map_or(egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180), |t| t.shortcut_color)
+            self.theme_colors.as_ref().map_or(
+                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 180),
+                |t| t.shortcut_color,
+            )
         } else {
             self.weak_color(ui)
         }
@@ -552,7 +550,8 @@ impl PopupApp {
         if mode == QueryMode::Browser {
             let match_indices = crate::browser::action::search(&self.browser_actions, &self.query);
             if match_indices.is_empty() {
-                self.browser_preview = crate::browser::action::resolve(&self.query).map(|a| a.description);
+                self.browser_preview =
+                    crate::browser::action::resolve(&self.query).map(|a| a.description);
                 self.filtered.clear();
                 self.selected = 0;
                 self.scroll_to_selected_once = true;
@@ -575,9 +574,7 @@ impl PopupApp {
             .clips
             .iter()
             .enumerate()
-            .filter(|(i, _)| {
-                !apps_only && self.clip_cache.matches_query(*i, q.as_str())
-            })
+            .filter(|(i, _)| !apps_only && self.clip_cache.matches_query(*i, q.as_str()))
             .collect();
         clip_matches.sort_by(|(_, a), (_, b)| {
             let a_count = match a {
@@ -671,8 +668,10 @@ impl PopupApp {
                 if let Some(resolved) = crate::browser::action::resolve(&self.query) {
                     let _ = crate::browser::action::open_url(&resolved.url);
                     let query_text = resolved.query;
-                    if let Some(existing) =
-                        self.browser_actions.iter_mut().find(|a| a.query == query_text)
+                    if let Some(existing) = self
+                        .browser_actions
+                        .iter_mut()
+                        .find(|a| a.query == query_text)
                     {
                         existing.use_count += 1;
                     } else {
@@ -790,7 +789,8 @@ impl PopupApp {
     fn persist_browser_actions(&mut self) {
         const POPUP_SAVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
         let now = std::time::Instant::now();
-        if self.last_popup_save
+        if self
+            .last_popup_save
             .map(|t| now.duration_since(t) < POPUP_SAVE_INTERVAL)
             .unwrap_or(false)
         {
@@ -803,7 +803,8 @@ impl PopupApp {
     fn persist_all(&mut self) {
         const POPUP_SAVE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
         let now = std::time::Instant::now();
-        if self.last_popup_save
+        if self
+            .last_popup_save
             .map(|t| now.duration_since(t) < POPUP_SAVE_INTERVAL)
             .unwrap_or(false)
         {
@@ -1041,10 +1042,15 @@ impl PopupApp {
                     if let Some(preview) = self.browser_preview.as_ref() {
                         ui.vertical_centered(|ui| {
                             ui.add_space(100.0);
-                            let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
+                            let (icon_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
                             theme::paint_search_icon(ui, icon_rect, weak_color);
                             ui.add_space(16.0);
-                            ui.label(egui::RichText::new(format!("→ {}", preview)).size(15.0).color(weak_color));
+                            ui.label(
+                                egui::RichText::new(format!("→ {}", preview))
+                                    .size(15.0)
+                                    .color(weak_color),
+                            );
                         });
                         return;
                     }
@@ -1122,7 +1128,8 @@ impl PopupApp {
                                 egui::vec2(16.0, 16.0),
                                 |this| {
                                     let path = this.store.history_path();
-                                    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+                                    let _ =
+                                        std::process::Command::new("xdg-open").arg(path).spawn();
                                 },
                             );
                             first_drawn = true;
@@ -1223,14 +1230,14 @@ impl PopupApp {
             ui.visuals().widgets.hovered.bg_stroke
         };
 
-        ui.painter().rect(
-            btn_rect,
-            egui::Rounding::same(8.0),
-            fill,
-            stroke,
-        );
+        ui.painter()
+            .rect(btn_rect, egui::Rounding::same(8.0), fill, stroke);
 
-        let color = if !enabled { self.weak_color(ui) } else { icon_color };
+        let color = if !enabled {
+            self.weak_color(ui)
+        } else {
+            icon_color
+        };
         let icon_rect = egui::Rect::from_center_size(btn_rect.center(), icon_size);
         icon_fn(ui, icon_rect, color);
 
@@ -1273,35 +1280,63 @@ impl PopupApp {
         ui.set_width(160.0);
         ui.spacing_mut().item_spacing.y = 2.0;
 
-        let weak_text = self.theme_colors.as_ref().map_or(ui.visuals().weak_text_color(), |c| c.weak_text_color);
+        let weak_text = self
+            .theme_colors
+            .as_ref()
+            .map_or(ui.visuals().weak_text_color(), |c| c.weak_text_color);
 
-        self.select_enum(ui, "THEMES", weak_text, self.config.general.theme, [
-            (Theme::Dark, "Dark"),
-            (Theme::Light, "Light"),
-            (Theme::Nord, "Nord"),
-            (Theme::Catppuccin, "Catppuccin"),
-            (Theme::Dracula, "Dracula"),
-        ], |cfg, t| cfg.general.set_theme(t));
+        self.select_enum(
+            ui,
+            "THEMES",
+            weak_text,
+            self.config.general.theme,
+            [
+                (Theme::Dark, "Dark"),
+                (Theme::Light, "Light"),
+                (Theme::Nord, "Nord"),
+                (Theme::Catppuccin, "Catppuccin"),
+                (Theme::Dracula, "Dracula"),
+            ],
+            |cfg, t| cfg.general.set_theme(t),
+        );
 
-        self.select_enum(ui, "FONTS", weak_text, self.config.general.font_preset, [
-            (FontPreset::Default, "System Default"),
-            (FontPreset::DejaVu, "DejaVu"),
-            (FontPreset::Liberation, "Liberation"),
-            (FontPreset::Fira, "Fira Code"),
-            (FontPreset::JetBrains, "JetBrains Mono"),
-            (FontPreset::Iosevka, "Iosevka"),
-        ], |cfg, f| cfg.general.set_font_preset(f));
+        self.select_enum(
+            ui,
+            "FONTS",
+            weak_text,
+            self.config.general.font_preset,
+            [
+                (FontPreset::Default, "System Default"),
+                (FontPreset::DejaVu, "DejaVu"),
+                (FontPreset::Liberation, "Liberation"),
+                (FontPreset::Fira, "Fira Code"),
+                (FontPreset::JetBrains, "JetBrains Mono"),
+                (FontPreset::Iosevka, "Iosevka"),
+            ],
+            |cfg, f| cfg.general.set_font_preset(f),
+        );
 
-        self.select_enum(ui, "FONT SIZE", weak_text, self.config.general.font_size, [
-            (FontSize::Small, "Small"),
-            (FontSize::Medium, "Medium"),
-            (FontSize::Large, "Large"),
-        ], |cfg, s| cfg.general.set_font_size(s));
+        self.select_enum(
+            ui,
+            "FONT SIZE",
+            weak_text,
+            self.config.general.font_size,
+            [
+                (FontSize::Small, "Small"),
+                (FontSize::Medium, "Medium"),
+                (FontSize::Large, "Large"),
+            ],
+            |cfg, s| cfg.general.set_font_size(s),
+        );
 
-        self.select_enum(ui, "FONT WEIGHT", weak_text, self.config.general.font_weight, [
-            (FontWeight::Normal, "Normal"),
-            (FontWeight::Bold, "Bold"),
-        ], |cfg, w| cfg.general.set_font_weight(w));
+        self.select_enum(
+            ui,
+            "FONT WEIGHT",
+            weak_text,
+            self.config.general.font_weight,
+            [(FontWeight::Normal, "Normal"), (FontWeight::Bold, "Bold")],
+            |cfg, w| cfg.general.set_font_weight(w),
+        );
 
         // ── Behavior ──
         section_label(ui, "BEHAVIOR", weak_text);
@@ -1400,7 +1435,8 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
-        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
+        let selection_bar_color =
+            theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1460,7 +1496,12 @@ impl PopupApp {
                                     .clip_cache
                                     .get_preview(orig_idx)
                                     .map(|s| s.to_string())
-                                    .unwrap_or_else(|| crate::clipboard::cache::preview_text(content, self.preview_chars));
+                                    .unwrap_or_else(|| {
+                                        crate::clipboard::cache::preview_text(
+                                            content,
+                                            self.preview_chars,
+                                        )
+                                    });
                                 ui.add(
                                     egui::Label::new(
                                         egui::RichText::new(preview)
@@ -1641,7 +1682,8 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
-        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
+        let selection_bar_color =
+            theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1758,7 +1800,8 @@ impl PopupApp {
         };
 
         let rounding = theme.map_or(0.0, |t| t.card_rounding);
-        let selection_bar_color = theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
+        let selection_bar_color =
+            theme.map_or(egui::Color32::from_rgb(99, 102, 241), |t| t.selection_bar);
 
         egui::Frame::none()
             .fill(fill)
@@ -1782,10 +1825,8 @@ impl PopupApp {
                 }
 
                 ui.horizontal(|ui| {
-                    let (icon_rect, _) = ui.allocate_exact_size(
-                        egui::vec2(36.0, 36.0),
-                        egui::Sense::hover(),
-                    );
+                    let (icon_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
                     theme::paint_search_icon(ui, icon_rect, self.weak_color(ui));
                     ui.add_space(8.0);
 
@@ -1793,9 +1834,7 @@ impl PopupApp {
                         ui.set_width((ui.available_width() - 40.0).max(120.0));
                         ui.add(
                             egui::Label::new(
-                                egui::RichText::new(&action.description)
-                                    .size(15.0)
-                                    .strong()
+                                egui::RichText::new(&action.description).size(15.0).strong(),
                             )
                             .truncate(),
                         );
@@ -1804,7 +1843,7 @@ impl PopupApp {
                             egui::Label::new(
                                 egui::RichText::new(&action.url)
                                     .size(12.5)
-                                    .color(self.weak_color(ui))
+                                    .color(self.weak_color(ui)),
                             )
                             .truncate(),
                         );
@@ -1830,10 +1869,13 @@ impl PopupApp {
                 ui.label(
                     egui::RichText::new(format!("Loading {}…", loading_name))
                         .size(15.0)
-                        .color(self.theme_colors.as_ref().map_or(
-                            egui::Color32::from_rgb(200, 200, 200),
-                            |t| t.weak_text_color,
-                        )),
+                        .color(
+                            self.theme_colors
+                                .as_ref()
+                                .map_or(egui::Color32::from_rgb(200, 200, 200), |t| {
+                                    t.weak_text_color
+                                }),
+                        ),
                 );
             });
             return;
@@ -2231,9 +2273,8 @@ impl eframe::App for PopupApp {
                         self.chat_cancel = None;
                     }
                     crate::ai::worker::ChatEvent::Error(e) => {
-                        self.chat_messages.push(crate::ai::ChatMessage::Assistant(format!(
-                            "[error: {e}]"
-                        )));
+                        self.chat_messages
+                            .push(crate::ai::ChatMessage::Assistant(format!("[error: {e}]")));
                         self.ai_buffer.clear();
                         self.chat_cancel = None;
                     }
@@ -2321,8 +2362,10 @@ impl eframe::App for PopupApp {
         }
         if ctrl_o && !self.chat_active {
             if let Some((ref filename, _)) = self.preview_image {
-                let _ =
-                    crate::browser::open::open_item(&crate::browser::open::OpenTarget::Image(filename.clone()), &self.store);
+                let _ = crate::browser::open::open_item(
+                    &crate::browser::open::OpenTarget::Image(filename.clone()),
+                    &self.store,
+                );
             } else if let Some(item) = self.selected_clip() {
                 let target = match item {
                     ClipItem::Text { content, .. } => {
@@ -2509,7 +2552,10 @@ mod tests {
 
     #[test]
     fn preview_collapses_whitespace_and_truncates() {
-        assert_eq!(crate::clipboard::cache::preview_text("hello\n   world", 50), "hello world");
+        assert_eq!(
+            crate::clipboard::cache::preview_text("hello\n   world", 50),
+            "hello world"
+        );
         assert_eq!(crate::clipboard::cache::preview_text("abcdef", 3), "abc…");
     }
 
@@ -2544,21 +2590,42 @@ mod tests {
 
     #[test]
     fn slash_prefix_switches_to_app_only_search() {
-        assert_eq!(crate::browser::action::filter_query("/firefox"), (QueryMode::AppsOnly, "firefox".into()));
-        assert_eq!(crate::browser::action::filter_query(" / terminal "), (QueryMode::AppsOnly, "terminal".into()));
-        assert_eq!(crate::browser::action::filter_query("/q"), (QueryMode::AppsOnly, "q".into()));
+        assert_eq!(
+            crate::browser::action::filter_query("/firefox"),
+            (QueryMode::AppsOnly, "firefox".into())
+        );
+        assert_eq!(
+            crate::browser::action::filter_query(" / terminal "),
+            (QueryMode::AppsOnly, "terminal".into())
+        );
+        assert_eq!(
+            crate::browser::action::filter_query("/q"),
+            (QueryMode::AppsOnly, "q".into())
+        );
     }
 
     #[test]
     fn colon_prefix_switches_to_browser_mode() {
-        assert_eq!(crate::browser::action::filter_query(":google"), (QueryMode::Browser, "google".into()));
-        assert_eq!(crate::browser::action::filter_query(" : hello "), (QueryMode::Browser, "hello".into()));
+        assert_eq!(
+            crate::browser::action::filter_query(":google"),
+            (QueryMode::Browser, "google".into())
+        );
+        assert_eq!(
+            crate::browser::action::filter_query(" : hello "),
+            (QueryMode::Browser, "hello".into())
+        );
     }
 
     #[test]
     fn normal_search_includes_clipboard_items() {
-        assert_eq!(crate::browser::action::filter_query("hello"), (QueryMode::Normal, "hello".into()));
-        assert_eq!(crate::browser::action::filter_query("  "), (QueryMode::Normal, "".into()));
+        assert_eq!(
+            crate::browser::action::filter_query("hello"),
+            (QueryMode::Normal, "hello".into())
+        );
+        assert_eq!(
+            crate::browser::action::filter_query("  "),
+            (QueryMode::Normal, "".into())
+        );
     }
 
     #[test]
