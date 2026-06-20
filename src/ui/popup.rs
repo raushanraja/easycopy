@@ -611,6 +611,7 @@ impl PopupApp {
         self.chat_rx = None;
         self.ai_buffer.clear();
         self.query.clear();
+        self.focus_search_once = true;
         self.apply_filter();
     }
 
