@@ -233,12 +233,24 @@ dependencies = [
  "adk-model",
  "adk-runner",
  "adk-session",
+ "adk-tool",
  "anyhow",
  "async-trait",
  "futures",
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "adk-rust-macros"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33bf0c5663b71f9f32185e9684fc2b6e30a43a35846bf7c2529395e88f7503b5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]
@@ -266,6 +278,27 @@ dependencies = [
  "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "adk-tool"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d9bec020b7161c160f398679fdb9a9e964aa18d278860723b6bc4f64fd6e416"
+dependencies = [
+ "adk-core",
+ "adk-rust-macros",
+ "adk-telemetry",
+ "async-trait",
+ "base64",
+ "futures",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -1451,6 +1484,8 @@ dependencies = [
  "global-hotkey",
  "image",
  "libc",
+ "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",

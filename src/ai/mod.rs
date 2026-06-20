@@ -1,5 +1,6 @@
 pub mod client;
 pub mod session;
+pub mod tools;
 pub mod worker;
 
 /// A single rendered chat message (user turn or assistant reply).

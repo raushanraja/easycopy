@@ -56,7 +56,7 @@ async fn run_turn(
     tx: &mpsc::Sender<ChatEvent>,
     cancel: &Notify,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let agent = build_agent(cfg)?;
+    let agent = build_agent(cfg, vec![crate::ai::tools::weather::build_weather_tool()])?;
     let sessions = build_session_service(db_path).await?;
 
     // Ensure the session exists (idempotent — ignore "already exists" errors).
