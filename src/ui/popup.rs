@@ -538,6 +538,69 @@ impl PopupApp {
         });
     }
 
+    fn draw_chat_button(
+        &self,
+        ui: &mut egui::Ui,
+        id: &str,
+        text: &str,
+        icon_fn: impl FnOnce(&mut egui::Ui, egui::Rect, egui::Color32),
+    ) -> egui::Response {
+        let theme = self.theme_colors.as_ref();
+
+        let text_font = egui::FontId::proportional(13.0);
+        let galley = ui.painter().layout_no_wrap(text.to_string(), text_font.clone(), egui::Color32::WHITE);
+        let text_size = galley.size();
+        let icon_size = egui::vec2(14.0, 14.0);
+        let padding = egui::vec2(12.0, 8.0);
+
+        let total_size = egui::vec2(
+            icon_size.x + 8.0 + text_size.x + padding.x * 2.0,
+            icon_size.y.max(text_size.y) + padding.y * 2.0,
+        );
+
+        let (rect, _response) = ui.allocate_exact_size(total_size, egui::Sense::click());
+        let resp = ui.interact(rect, ui.id().with(id), egui::Sense::click());
+
+        let bg_fill = if resp.clicked() {
+            theme.map_or(ui.visuals().widgets.active.bg_fill, |t| t.widget_active_bg)
+        } else if resp.hovered() {
+            theme.map_or(ui.visuals().widgets.hovered.bg_fill, |t| t.widget_hovered_bg)
+        } else {
+            theme.map_or(ui.visuals().widgets.inactive.bg_fill, |t| t.widget_inactive_bg)
+        };
+
+        let stroke_color = theme.map_or(ui.visuals().widgets.inactive.bg_stroke.color, |t| t.widget_border);
+        let stroke = egui::Stroke::new(1.0, stroke_color);
+
+        ui.painter().rect(rect, egui::Rounding::same(6.0), bg_fill, stroke);
+
+        let fg_color = theme.map_or(ui.visuals().widgets.inactive.fg_stroke.color, |t| t.accent);
+
+        let content_w = icon_size.x + 8.0 + text_size.x;
+        let content_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(content_w, icon_size.y.max(text_size.y)));
+
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(content_rect.left(), content_rect.center().y - icon_size.y / 2.0),
+            icon_size
+        );
+        icon_fn(ui, icon_rect, fg_color);
+
+        let text_pos = egui::pos2(
+            icon_rect.right() + 8.0,
+            content_rect.center().y - text_size.y / 2.0
+        );
+        ui.painter().text(
+            text_pos,
+            egui::Align2::LEFT_TOP,
+            text,
+            text_font,
+            theme.map_or(ui.visuals().text_color(), |t| t.text_color)
+        );
+
+        resp
+    }
+
+
     /// Exit chat mode: cancel any in-flight turn and return to search.
     fn exit_chat(&mut self) {
         self.chat_active = false;
@@ -629,13 +692,10 @@ impl PopupApp {
             ui.spacing_mut().item_spacing.x = 12.0;
 
             // 1. "New chat" button
-            let new_chat_btn = egui::Button::new(
-                egui::RichText::new("New chat")
-                    .size(13.0)
-                    .strong()
-            )
-            .rounding(6.0);
-            if ui.add(new_chat_btn).clicked() {
+            if self
+                .draw_chat_button(ui, "new_chat_btn", "New chat", theme::paint_plus_icon)
+                .clicked()
+            {
                 self.chat_session_id = Some(crate::ai::session::new_session_id());
                 self.chat_messages.clear();
                 self.ai_buffer.clear();
@@ -643,13 +703,10 @@ impl PopupApp {
             }
 
             // 2. "Continue" button
-            let continue_btn = egui::Button::new(
-                egui::RichText::new("Continue")
-                    .size(13.0)
-                    .strong()
-            )
-            .rounding(6.0);
-            if ui.add(continue_btn).clicked() {
+            if self
+                .draw_chat_button(ui, "continue_chat_btn", "Continue", theme::paint_resume_icon)
+                .clicked()
+            {
                 if let Ok(st) = crate::ai::session::ChatState::load_from_path(&self.chat_state_path) {
                     if let Some(ref sid) = st.current_session_id {
                         self.chat_session_id = Some(sid.clone());
@@ -661,13 +718,10 @@ impl PopupApp {
             // 3. "Copy last answer" button (if assistant has responded)
             let has_assistant_msg = self.chat_messages.iter().any(|m| matches!(m, crate::ai::ChatMessage::Assistant(_)));
             if has_assistant_msg {
-                let copy_btn = egui::Button::new(
-                    egui::RichText::new("Copy last answer")
-                        .size(13.0)
-                        .strong()
-                )
-                .rounding(6.0);
-                if ui.add(copy_btn).clicked() {
+                if self
+                    .draw_chat_button(ui, "copy_answer_btn", "Copy last answer", theme::paint_copy_icon)
+                    .clicked()
+                {
                     self.copy_last_assistant_response();
                 }
             }

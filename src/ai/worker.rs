@@ -72,7 +72,7 @@ async fn run_turn(
     let runner = Runner::builder()
         .app_name(APP)
         .agent(agent)
-        .session_service(sessions)
+        .session_service(sessions.clone())
         .build()?;
 
     let mut stream = runner
@@ -82,6 +82,9 @@ async fn run_turn(
             Content::new("user").with_text(prompt),
         )
         .await?;
+
+    let mut full_response = String::new();
+    let mut normal_completion = false;
 
     loop {
         tokio::select! {
@@ -94,12 +97,14 @@ async fn run_turn(
                             for part in &content.parts {
                                 if let Some(text) = part.text() {
                                     if !text.is_empty() {
+                                        full_response.push_str(text);
                                         let _ = tx.send(ChatEvent::Delta(text.to_string()));
                                     }
                                 }
                             }
                         }
                         if event.is_final_response() {
+                            normal_completion = true;
                             let _ = tx.send(ChatEvent::Done);
                             break;
                         }
@@ -112,5 +117,13 @@ async fn run_turn(
             }
         }
     }
+
+    if normal_completion && !full_response.is_empty() {
+        let mut ev_assistant = Event::new(crate::ai::session::new_session_id());
+        ev_assistant.author = "assistant".to_string();
+        ev_assistant.llm_response.content = Some(Content::new("model").with_text(&full_response));
+        let _ = sessions.append_event(session_id, ev_assistant).await;
+    }
+
     Ok(())
 }

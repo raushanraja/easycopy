@@ -1077,6 +1077,62 @@ pub fn paint_open_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32
     );
 }
 
+pub fn paint_plus_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.8, color);
+    let center = rect.center();
+    let half_len = (rect.width().min(rect.height()) * 0.45).max(1.0);
+    painter.line_segment(
+        [center - egui::vec2(half_len, 0.0), center + egui::vec2(half_len, 0.0)],
+        stroke,
+    );
+    painter.line_segment(
+        [center - egui::vec2(0.0, half_len), center + egui::vec2(0.0, half_len)],
+        stroke,
+    );
+}
+
+pub fn paint_resume_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.8, color);
+    let center = rect.center();
+    let half_len = (rect.width().min(rect.height()) * 0.4).max(1.0);
+
+    // Main horizontal stem
+    painter.line_segment(
+        [center - egui::vec2(half_len, 0.0), center + egui::vec2(half_len, 0.0)],
+        stroke,
+    );
+    // Arrow head (upper and lower tip pointing right)
+    painter.line_segment(
+        [center + egui::vec2(half_len, 0.0), center + egui::vec2(half_len - half_len * 0.6, -half_len * 0.6)],
+        stroke,
+    );
+    painter.line_segment(
+        [center + egui::vec2(half_len, 0.0), center + egui::vec2(half_len - half_len * 0.6, half_len * 0.6)],
+        stroke,
+    );
+}
+
+pub fn paint_copy_icon(ui: &mut egui::Ui, rect: egui::Rect, color: egui::Color32) {
+    let painter = ui.painter();
+    let stroke = egui::Stroke::new(1.5, color);
+
+    // Board rectangle: lower portion
+    let board_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + rect.width() * 0.15, rect.top() + rect.height() * 0.25),
+        egui::pos2(rect.right() - rect.width() * 0.15, rect.bottom() - rect.height() * 0.05)
+    );
+    painter.rect_stroke(board_rect, egui::Rounding::same(1.5), stroke);
+
+    // Clip at the top: small rectangle/clip
+    let clip_rect = egui::Rect::from_min_max(
+        egui::pos2(rect.center().x - rect.width() * 0.18, rect.top() + rect.height() * 0.05),
+        egui::pos2(rect.center().x + rect.width() * 0.18, rect.top() + rect.height() * 0.25)
+    );
+    painter.rect_stroke(clip_rect, egui::Rounding::same(1.0), stroke);
+}
+
 /// Draw a circular icon badge (used as a visual prefix for clip rows).
 pub fn draw_icon_badge(
     ui: &mut egui::Ui,
