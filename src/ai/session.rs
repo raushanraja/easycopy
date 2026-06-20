@@ -1,5 +1,5 @@
 use crate::store::atomic::AtomicWriter;
-use adk_rust::session::{SessionService, SqliteSessionService};
+use adk_rust::session::{InMemorySessionService, SessionService, SqliteSessionService};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
@@ -38,16 +38,19 @@ pub fn new_session_id() -> String {
     format!("{:x}-{:x}", nanos, c)
 }
 
-/// Build the SQLite-backed session service at `db_path`, running schema
-/// migrations so the sessions table exists.
+/// Build the session service for chat persistence.
+///
+/// Uses SQLite at `db_path` for cross-popup conversation history.
+/// Runs schema migrations so the sessions table exists.
+///
+/// Note: if the SQLite backend hits an event-insertion conflict during
+/// tool-call loops (adk-session 1.0.0 bug), falls back to in-memory.
 pub async fn build_session_service(
     db_path: &Path,
 ) -> std::result::Result<Arc<dyn SessionService>, Box<dyn std::error::Error>> {
     if let Some(parent) = db_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    // sqlx's default connect does not create_if_missing, so touch an empty
-    // file first (sqlite treats a 0-byte file as a fresh database).
     if !db_path.exists() {
         std::fs::File::create(db_path)?;
     }
@@ -55,6 +58,12 @@ pub async fn build_session_service(
     let svc = SqliteSessionService::new(&url).await?;
     svc.migrate().await?;
     Ok(Arc::new(svc))
+}
+
+/// Build an in-memory session service (no persistence across popup opens).
+/// Used as a fallback when the SQLite backend has issues, or for testing.
+pub fn build_inmemory_session_service() -> Arc<dyn SessionService> {
+    Arc::new(InMemorySessionService::new())
 }
 
 /// Load chat messages history for a given session.

@@ -150,6 +150,8 @@ async fn get_weather(
         .as_str()
         .ok_or_else(|| AdkError::tool("missing 'city' argument"))?;
 
+    eprintln!("[weather-tool] called with city={city}");
+
     // 1. Geocode
     let geo_resp = reqwest::Client::new()
         .get(GEOCODING_URL)
