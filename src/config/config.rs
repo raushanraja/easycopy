@@ -200,9 +200,7 @@ impl Default for AiConfig {
             enable: false,
             provider: AiProvider::Gemini,
             model: String::new(),
-            system_prompt: String::from(
-                "You are a concise assistant inside a clipboard manager.",
-            ),
+            system_prompt: String::from("You are a concise assistant inside a clipboard manager."),
             stream: true,
             max_tokens: None,
             temperature: None,
@@ -218,7 +216,7 @@ impl AiConfig {
                 AiProvider::Gemini => "gemini-2.5-flash".into(),
                 AiProvider::OpenAI => "gpt-4o-mini".into(),
                 AiProvider::Anthropic => "claude-sonnet-4-6".into(),
-                AiProvider::Ollama => "llama3.2".into(),
+                AiProvider::Ollama => "llama3.2:3b".into(),
             };
         }
         if self.ollama_url.is_empty() {
@@ -326,7 +324,13 @@ poll_interval_ms = 250
 
     #[test]
     fn new_themes_are_preserved() {
-        for theme in &[Theme::Nord, Theme::Catppuccin, Theme::Dracula, Theme::Light, Theme::System] {
+        for theme in &[
+            Theme::Nord,
+            Theme::Catppuccin,
+            Theme::Dracula,
+            Theme::Light,
+            Theme::System,
+        ] {
             let mut cfg = Config::default();
             cfg.general.set_theme(*theme);
             assert_eq!(cfg.general.theme, *theme);

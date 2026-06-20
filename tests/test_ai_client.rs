@@ -16,7 +16,7 @@ fn build_agent_missing_cloud_key_is_err() {
 fn build_agent_ollama_needs_no_key() {
     let mut cfg = AiConfig::default();
     cfg.provider = AiProvider::Ollama;
-    cfg.model = "llama3.2".into();
+    cfg.model = "llama3.2:3b".into();
     cfg.ollama_url = "http://localhost:11434".into();
     let res = build_agent(&cfg);
     assert!(res.is_ok(), "Ollama needs no API key: {:?}", res.err());

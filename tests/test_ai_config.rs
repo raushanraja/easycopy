@@ -48,7 +48,7 @@ fn sanitize_fills_default_model_per_provider() {
     let mut c = AiConfig::default();
     c.provider = AiProvider::Ollama;
     c.sanitize();
-    assert_eq!(c.model, "llama3.2");
+    assert_eq!(c.model, "llama3.2:3b");
 
     let mut c = AiConfig::default();
     c.provider = AiProvider::Gemini;

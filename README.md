@@ -115,7 +115,7 @@ Enable it in `~/.config/easycopy/config.toml`:
 [ai]
 enable = true
 provider = "ollama"              # gemini | openai | anthropic | ollama
-model = "llama3.2"               # auto-filled per provider if empty
+model = "llama3.2:3b"             # auto-filled per provider if empty
 system_prompt = "You are a concise assistant inside a clipboard manager."
 stream = true
 max_tokens = 512
@@ -127,7 +127,7 @@ Cloud providers read their API key from the environment — never store keys in 
 
 | Provider | Env var | Example model |
 | --- | --- | --- |
-| `ollama` | _(none — run `ollama serve`)_ | `llama3.2` |
+| `ollama` | _(none — run `ollama serve`)_ | `llama3.2:3b` |
 | `gemini` | `GOOGLE_API_KEY` | `gemini-2.5-flash` |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
