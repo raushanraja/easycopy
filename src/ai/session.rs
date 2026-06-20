@@ -56,3 +56,46 @@ pub async fn build_session_service(
     svc.migrate().await?;
     Ok(Arc::new(svc))
 }
+
+/// Load chat messages history for a given session.
+pub async fn load_history_async(
+    db_path: &Path,
+    session_id: &str,
+) -> std::result::Result<Vec<crate::ai::ChatMessage>, Box<dyn std::error::Error>> {
+    let sessions = build_session_service(db_path).await?;
+    let session = sessions
+        .get(adk_rust::session::GetRequest {
+            app_name: "easycopy".to_string(),
+            user_id: "easycopy-user".to_string(),
+            session_id: session_id.to_string(),
+            num_recent_events: None,
+            after: None,
+        })
+        .await?;
+
+    let mut messages = Vec::new();
+    for ev in session.events().all() {
+        let mut text = String::new();
+        if let Some(content) = &ev.llm_response.content {
+            for part in &content.parts {
+                if let Some(t) = part.text() {
+                    text.push_str(t);
+                }
+            }
+        }
+        if text.is_empty() {
+            continue;
+        }
+        // Match the role or author
+        let is_user = ev.author == "easycopy-user"
+            || ev.author == "user"
+            || ev.llm_response.content.as_ref().map(|c| c.role.as_str()) == Some("user");
+        if is_user {
+            messages.push(crate::ai::ChatMessage::User(text));
+        } else {
+            messages.push(crate::ai::ChatMessage::Assistant(text));
+        }
+    }
+    Ok(messages)
+}
+
