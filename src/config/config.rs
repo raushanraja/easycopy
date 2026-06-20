@@ -169,11 +169,54 @@ impl Default for FooterConfig {
 
 // ── Config ────────────────────────────────────────────────────────
 
+// ── AI ───────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AiProvider {
+    #[default]
+    Gemini,
+    OpenAI,
+    Anthropic,
+    Ollama,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct AiConfig {
+    pub enable: bool,
+    pub provider: AiProvider,
+    pub model: String,
+    pub system_prompt: String,
+    pub stream: bool,
+    pub max_tokens: Option<u32>,
+    pub temperature: Option<f32>,
+    pub ollama_url: String,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            provider: AiProvider::Gemini,
+            model: String::new(),
+            system_prompt: String::from(
+                "You are a concise assistant inside a clipboard manager.",
+            ),
+            stream: true,
+            max_tokens: None,
+            temperature: None,
+            ollama_url: String::from("http://localhost:11434"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(default)]
 pub struct Config {
     pub general: GeneralConfig,
     pub footer: FooterConfig,
+    pub ai: AiConfig,
     #[serde(skip)]
     pub parse_error: Option<String>,
 }
