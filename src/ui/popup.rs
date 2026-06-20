@@ -180,6 +180,15 @@ struct PopupApp {
     icon_res_rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
     lightbox_req_tx: std::sync::mpsc::Sender<String>,
     lightbox_res_rx: std::sync::mpsc::Receiver<(String, egui::ColorImage)>,
+    // ── AI chat ──
+    chat_active: bool,
+    chat_messages: Vec<crate::ai::ChatMessage>,
+    ai_buffer: String,
+    chat_rx: Option<std::sync::mpsc::Receiver<crate::ai::worker::ChatEvent>>,
+    chat_cancel: Option<Arc<tokio::sync::Notify>>,
+    chat_session_id: Option<String>,
+    chat_db_path: std::path::PathBuf,
+    chat_state_path: std::path::PathBuf,
 }
 
 // ── Theme popup helpers ─────────────────────────────────────────
@@ -346,6 +355,15 @@ impl PopupApp {
             }
         });
 
+        // ── AI chat: data paths + resume last session id ──
+        let dirs = crate::config::dirs::Directories::discover();
+        let chat_db_path = crate::store::paths::chat_db(&dirs);
+        let chat_state_path = crate::store::paths::chat_state(&dirs);
+        let chat_session_id =
+            crate::ai::session::ChatState::load_from_path(&chat_state_path)
+                .ok()
+                .and_then(|s| s.current_session_id);
+
         Self {
             clips: Vec::new(),
             apps: Vec::new(),
@@ -384,6 +402,14 @@ impl PopupApp {
             lightbox_res_rx,
             image_store,
             store,
+            chat_active: false,
+            chat_messages: Vec::new(),
+            ai_buffer: String::new(),
+            chat_rx: None,
+            chat_cancel: None,
+            chat_session_id,
+            chat_db_path,
+            chat_state_path,
         }
     }
 
