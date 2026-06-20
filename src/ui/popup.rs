@@ -544,6 +544,7 @@ impl PopupApp {
         id: &str,
         text: &str,
         icon_fn: impl FnOnce(&mut egui::Ui, egui::Rect, egui::Color32),
+        fixed_width: f32,
     ) -> egui::Response {
         let theme = self.theme_colors.as_ref();
 
@@ -554,7 +555,7 @@ impl PopupApp {
         let padding = egui::vec2(12.0, 8.0);
 
         let total_size = egui::vec2(
-            icon_size.x + 8.0 + text_size.x + padding.x * 2.0,
+            fixed_width,
             icon_size.y.max(text_size.y) + padding.y * 2.0,
         );
 
@@ -691,9 +692,14 @@ impl PopupApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
 
-            // 1. "New chat" button
+            let has_assistant_msg = self.chat_messages.iter().any(|m| matches!(m, crate::ai::ChatMessage::Assistant(_)));
+            let num_buttons = if has_assistant_msg { 3.0 } else { 2.0 };
+            let total_spacing = 12.0 * (num_buttons - 1.0);
+            let button_width = (ui.available_width() - total_spacing) / num_buttons;
+
+            // 1. "New" button
             if self
-                .draw_chat_button(ui, "new_chat_btn", "New chat", theme::paint_plus_icon)
+                .draw_chat_button(ui, "new_chat_btn", "New", theme::paint_plus_icon, button_width)
                 .clicked()
             {
                 self.chat_session_id = Some(crate::ai::session::new_session_id());
@@ -704,7 +710,7 @@ impl PopupApp {
 
             // 2. "Continue" button
             if self
-                .draw_chat_button(ui, "continue_chat_btn", "Continue", theme::paint_resume_icon)
+                .draw_chat_button(ui, "continue_chat_btn", "Continue", theme::paint_resume_icon, button_width)
                 .clicked()
             {
                 if let Ok(st) = crate::ai::session::ChatState::load_from_path(&self.chat_state_path) {
@@ -715,11 +721,10 @@ impl PopupApp {
                 }
             }
 
-            // 3. "Copy last answer" button (if assistant has responded)
-            let has_assistant_msg = self.chat_messages.iter().any(|m| matches!(m, crate::ai::ChatMessage::Assistant(_)));
+            // 3. "Copy" button (if assistant has responded)
             if has_assistant_msg {
                 if self
-                    .draw_chat_button(ui, "copy_answer_btn", "Copy last answer", theme::paint_copy_icon)
+                    .draw_chat_button(ui, "copy_answer_btn", "Copy", theme::paint_copy_icon, button_width)
                     .clicked()
                 {
                     self.copy_last_assistant_response();
