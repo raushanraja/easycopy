@@ -87,6 +87,7 @@ async fn run_turn(
         )
         .await?;
 
+    let mut last_model_content: Option<Content> = None;
     let mut full_response = String::new();
     let mut normal_completion = false;
 
@@ -97,19 +98,17 @@ async fn run_turn(
                 let Some(ev) = maybe_ev else { break };
                 match ev {
                     Ok(event) => {
-                        if let Some(content) = event.content() {
-                            for part in &content.parts {
-                                if let Some(text) = part.text() {
-                                    if !text.is_empty() {
-                                        full_response.push_str(text);
-                                        let _ = tx.send(ChatEvent::Delta(text.to_string()));
-                                    }
+                        let is_model = event.llm_response.content.as_ref().map(|c| c.role.as_str()) == Some("model");
+                        if is_model {
+                            if let Some(content) = event.content() {
+                                let has_text = content.parts.iter().any(|p| p.text().is_some());
+                                if has_text {
+                                    last_model_content = Some(content.clone());
                                 }
                             }
                         }
                         if event.is_final_response() {
                             normal_completion = true;
-                            let _ = tx.send(ChatEvent::Done);
                             break;
                         }
                     }
@@ -122,6 +121,21 @@ async fn run_turn(
         }
     }
 
+    if normal_completion {
+        if let Some(content) = last_model_content {
+            for part in &content.parts {
+                if let Some(text) = part.text() {
+                    if !text.is_empty() {
+                        let cleaned = clean_token(text);
+                        full_response.push_str(&cleaned);
+                        let _ = tx.send(ChatEvent::Delta(cleaned));
+                    }
+                }
+            }
+        }
+        let _ = tx.send(ChatEvent::Done);
+    }
+
     if normal_completion && !full_response.is_empty() {
         let mut ev_assistant = Event::new(crate::ai::session::new_session_id());
         ev_assistant.author = "assistant".to_string();
@@ -130,4 +144,26 @@ async fn run_turn(
     }
 
     Ok(())
+}
+
+fn clean_token(token: &str) -> String {
+    if let Ok(cleaned) = serde_json::from_str::<String>(token) {
+        cleaned
+    } else {
+        token.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_token() {
+        assert_eq!(clean_token("\"Here\""), "Here");
+        assert_eq!(clean_token("\" is\""), " is");
+        assert_eq!(clean_token("\"\\n•\""), "\n•");
+        assert_eq!(clean_token("normal"), "normal");
+        assert_eq!(clean_token(""), "");
+    }
 }
