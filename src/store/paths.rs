@@ -29,3 +29,11 @@ pub fn daemon_socket(dirs: &Directories) -> std::path::PathBuf {
 pub fn daemon_pid(dirs: &Directories) -> std::path::PathBuf {
     dirs.data_dir.join("daemon.pid")
 }
+
+pub fn chat_db(dirs: &Directories) -> std::path::PathBuf {
+    dirs.data_dir.join("chat.db")
+}
+
+pub fn chat_state(dirs: &Directories) -> std::path::PathBuf {
+    dirs.data_dir.join("chat_state.json")
+}
