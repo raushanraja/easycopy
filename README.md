@@ -14,6 +14,7 @@ Linux clipboard history manager. Daemon monitors the clipboard, popup lets you b
 - Frequent items are prioritized in search results
 - Themes, font presets, and compact layout options
 - X11 auto-paste support through `xdotool`
+- AI chat: type `/` with no app matches to ask an AI (optional, configurable provider)
 
 <p align="center">
   <img src="assets/demo.gif" alt="easycopy demo" width="600">
@@ -84,6 +85,14 @@ show_help = true
 show_clear = true
 show_settings = true
 show_theme = true
+
+[ai]
+enable = false
+provider = "gemini"
+model = ""
+system_prompt = "You are a concise assistant inside a clipboard manager."
+stream = true
+ollama_url = "http://localhost:11434"
 ```
 </details>
 
@@ -95,6 +104,37 @@ Supported values:
 - `font_weight`: `normal`, `bold`
 
 The popup also has an in-app settings dropdown where themes, fonts, and font size can be changed and saved instantly.
+
+## AI chat
+
+The popup has an optional AI chat mode. Type `/` followed by a query that matches no apps (e.g. `/what is 2+2`) and the popup switches to a chat panel where you can converse with an AI. Replies stream in live; press **Esc** to leave chat mode. Conversation history is persisted across popup opens in `~/.local/share/easycopy/chat.db`.
+
+Enable it in `~/.config/easycopy/config.toml`:
+
+```toml
+[ai]
+enable = true
+provider = "ollama"              # gemini | openai | anthropic | ollama
+model = "llama3.2"               # auto-filled per provider if empty
+system_prompt = "You are a concise assistant inside a clipboard manager."
+stream = true
+max_tokens = 512
+temperature = 0.3
+ollama_url = "http://localhost:11434"   # ollama only
+```
+
+Cloud providers read their API key from the environment — never store keys in the config file:
+
+| Provider | Env var | Example model |
+| --- | --- | --- |
+| `ollama` | _(none — run `ollama serve`)_ | `llama3.2` |
+| `gemini` | `GOOGLE_API_KEY` | `gemini-2.5-flash` |
+| `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
+
+Controls in the chat panel: **New chat** starts a fresh conversation, **Continue** resumes the last, and **Copy last answer** copies the latest reply to the clipboard.
+
+> **Note:** AI support requires Rust **1.94+** and increases the release binary to ~22 MB (tokio + reqwest + sqlx + the provider clients). It is compiled in regardless of `enable`; set `enable = false` to keep the feature dormant.
 
 ## i3 integration
 

@@ -4,7 +4,7 @@ Build `easycopy` from source.
 
 ## Requirements
 
-- Latest stable Rust
+- Rust 1.94+ (stable)
 - Linux desktop session
 - X11 libraries used by `eframe`
 - `xdotool` if `auto_paste = true`
