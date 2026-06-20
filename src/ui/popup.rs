@@ -461,7 +461,9 @@ impl PopupApp {
                 Err(_) => return,
             };
             rt.block_on(async move {
-                if let Ok(msgs) = crate::ai::session::load_history_async(&db_path, &session_id).await {
+                if let Ok(msgs) =
+                    crate::ai::session::load_history_async(&db_path, &session_id).await
+                {
                     let _ = tx.send(msgs);
                 }
             });
@@ -513,10 +515,16 @@ impl PopupApp {
 
         ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
             let frame = egui::Frame::none()
-                .fill(theme.map_or(ui.visuals().widgets.noninteractive.bg_fill, |t| t.extreme_bg))
+                .fill(
+                    theme.map_or(ui.visuals().widgets.noninteractive.bg_fill, |t| {
+                        t.extreme_bg
+                    }),
+                )
                 .stroke(egui::Stroke::new(
                     1.0,
-                    theme.map_or(ui.visuals().widgets.noninteractive.bg_stroke.color, |t| t.widget_border),
+                    theme.map_or(ui.visuals().widgets.noninteractive.bg_stroke.color, |t| {
+                        t.widget_border
+                    }),
                 ))
                 .rounding(egui::Rounding {
                     nw: 12.0,
@@ -549,15 +557,14 @@ impl PopupApp {
         let theme = self.theme_colors.as_ref();
 
         let text_font = egui::FontId::proportional(13.0);
-        let galley = ui.painter().layout_no_wrap(text.to_string(), text_font.clone(), egui::Color32::WHITE);
+        let galley =
+            ui.painter()
+                .layout_no_wrap(text.to_string(), text_font.clone(), egui::Color32::WHITE);
         let text_size = galley.size();
         let icon_size = egui::vec2(14.0, 14.0);
         let padding = egui::vec2(12.0, 8.0);
 
-        let total_size = egui::vec2(
-            fixed_width,
-            icon_size.y.max(text_size.y) + padding.y * 2.0,
-        );
+        let total_size = egui::vec2(fixed_width, icon_size.y.max(text_size.y) + padding.y * 2.0);
 
         let (rect, _response) = ui.allocate_exact_size(total_size, egui::Sense::click());
         let resp = ui.interact(rect, ui.id().with(id), egui::Sense::click());
@@ -565,42 +572,54 @@ impl PopupApp {
         let bg_fill = if resp.clicked() {
             theme.map_or(ui.visuals().widgets.active.bg_fill, |t| t.widget_active_bg)
         } else if resp.hovered() {
-            theme.map_or(ui.visuals().widgets.hovered.bg_fill, |t| t.widget_hovered_bg)
+            theme.map_or(ui.visuals().widgets.hovered.bg_fill, |t| {
+                t.widget_hovered_bg
+            })
         } else {
-            theme.map_or(ui.visuals().widgets.inactive.bg_fill, |t| t.widget_inactive_bg)
+            theme.map_or(ui.visuals().widgets.inactive.bg_fill, |t| {
+                t.widget_inactive_bg
+            })
         };
 
-        let stroke_color = theme.map_or(ui.visuals().widgets.inactive.bg_stroke.color, |t| t.widget_border);
+        let stroke_color = theme.map_or(ui.visuals().widgets.inactive.bg_stroke.color, |t| {
+            t.widget_border
+        });
         let stroke = egui::Stroke::new(1.0, stroke_color);
 
-        ui.painter().rect(rect, egui::Rounding::same(6.0), bg_fill, stroke);
+        ui.painter()
+            .rect(rect, egui::Rounding::same(6.0), bg_fill, stroke);
 
         let fg_color = theme.map_or(ui.visuals().widgets.inactive.fg_stroke.color, |t| t.accent);
 
         let content_w = icon_size.x + 8.0 + text_size.x;
-        let content_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(content_w, icon_size.y.max(text_size.y)));
+        let content_rect = egui::Rect::from_center_size(
+            rect.center(),
+            egui::vec2(content_w, icon_size.y.max(text_size.y)),
+        );
 
         let icon_rect = egui::Rect::from_min_size(
-            egui::pos2(content_rect.left(), content_rect.center().y - icon_size.y / 2.0),
-            icon_size
+            egui::pos2(
+                content_rect.left(),
+                content_rect.center().y - icon_size.y / 2.0,
+            ),
+            icon_size,
         );
         icon_fn(ui, icon_rect, fg_color);
 
         let text_pos = egui::pos2(
             icon_rect.right() + 8.0,
-            content_rect.center().y - text_size.y / 2.0
+            content_rect.center().y - text_size.y / 2.0,
         );
         ui.painter().text(
             text_pos,
             egui::Align2::LEFT_TOP,
             text,
             text_font,
-            theme.map_or(ui.visuals().text_color(), |t| t.text_color)
+            theme.map_or(ui.visuals().text_color(), |t| t.text_color),
         );
 
         resp
     }
-
 
     /// Exit chat mode: cancel any in-flight turn and return to search.
     fn exit_chat(&mut self) {
@@ -693,14 +712,23 @@ impl PopupApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 12.0;
 
-            let has_assistant_msg = self.chat_messages.iter().any(|m| matches!(m, crate::ai::ChatMessage::Assistant(_)));
+            let has_assistant_msg = self
+                .chat_messages
+                .iter()
+                .any(|m| matches!(m, crate::ai::ChatMessage::Assistant(_)));
             let num_buttons = if has_assistant_msg { 3.0 } else { 2.0 };
             let total_spacing = 12.0 * (num_buttons - 1.0);
             let button_width = (ui.available_width() - total_spacing) / num_buttons;
 
             // 1. "New" button
             if self
-                .draw_chat_button(ui, "new_chat_btn", "New", theme::paint_plus_icon, button_width)
+                .draw_chat_button(
+                    ui,
+                    "new_chat_btn",
+                    "New",
+                    theme::paint_plus_icon,
+                    button_width,
+                )
                 .clicked()
             {
                 self.chat_session_id = Some(crate::ai::session::new_session_id());
@@ -711,10 +739,17 @@ impl PopupApp {
 
             // 2. "Continue" button
             if self
-                .draw_chat_button(ui, "continue_chat_btn", "Continue", theme::paint_resume_icon, button_width)
+                .draw_chat_button(
+                    ui,
+                    "continue_chat_btn",
+                    "Continue",
+                    theme::paint_resume_icon,
+                    button_width,
+                )
                 .clicked()
             {
-                if let Ok(st) = crate::ai::session::ChatState::load_from_path(&self.chat_state_path) {
+                if let Ok(st) = crate::ai::session::ChatState::load_from_path(&self.chat_state_path)
+                {
                     if let Some(ref sid) = st.current_session_id {
                         self.chat_session_id = Some(sid.clone());
                         self.load_chat_history(sid.clone());
@@ -725,7 +760,13 @@ impl PopupApp {
             // 3. "Copy" button (if assistant has responded)
             if has_assistant_msg {
                 if self
-                    .draw_chat_button(ui, "copy_answer_btn", "Copy", theme::paint_copy_icon, button_width)
+                    .draw_chat_button(
+                        ui,
+                        "copy_answer_btn",
+                        "Copy",
+                        theme::paint_copy_icon,
+                        button_width,
+                    )
                     .clicked()
                 {
                     self.copy_last_assistant_response();
@@ -1119,7 +1160,11 @@ impl PopupApp {
                                     egui::TextEdit::singleline(&mut self.query)
                                         .font(egui::TextStyle::Body)
                                         .frame(false)
-                                        .hint_text(if self.chat_active { "Ask AI assistant..." } else { SEARCH_HINT }),
+                                        .hint_text(if self.chat_active {
+                                            "Ask AI assistant..."
+                                        } else {
+                                            SEARCH_HINT
+                                        }),
                                 );
 
                                 if self.focus_search_once {

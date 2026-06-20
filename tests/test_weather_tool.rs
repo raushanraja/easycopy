@@ -1,4 +1,6 @@
-use easycopy::ai::tools::weather::{wmo_description, parse_geocoding, parse_weather, WeatherResult};
+use easycopy::ai::tools::weather::{
+    parse_geocoding, parse_weather, wmo_description, WeatherResult,
+};
 
 #[test]
 fn wmo_clear_sky() {

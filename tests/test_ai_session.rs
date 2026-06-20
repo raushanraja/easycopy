@@ -48,15 +48,20 @@ async fn build_session_service_connects_and_migrates() {
 async fn test_load_history_async() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("chat.db");
-    let svc = easycopy::ai::session::build_session_service(&db).await.unwrap();
+    let svc = easycopy::ai::session::build_session_service(&db)
+        .await
+        .unwrap();
 
     let session_id = "test-session-123";
-    let _session = svc.create(adk_rust::session::CreateRequest {
-        app_name: "easycopy".to_string(),
-        user_id: "easycopy-user".to_string(),
-        session_id: Some(session_id.to_string()),
-        state: std::collections::HashMap::new(),
-    }).await.unwrap();
+    let _session = svc
+        .create(adk_rust::session::CreateRequest {
+            app_name: "easycopy".to_string(),
+            user_id: "easycopy-user".to_string(),
+            session_id: Some(session_id.to_string()),
+            state: std::collections::HashMap::new(),
+        })
+        .await
+        .unwrap();
 
     // Append user event
     let mut ev_user = adk_rust::Event::new("inv-1");
@@ -67,11 +72,14 @@ async fn test_load_history_async() {
     // Append assistant event
     let mut ev_assistant = adk_rust::Event::new("inv-2");
     ev_assistant.author = "assistant".to_string();
-    ev_assistant.llm_response.content = Some(adk_rust::Content::new("model").with_text("hello user"));
+    ev_assistant.llm_response.content =
+        Some(adk_rust::Content::new("model").with_text("hello user"));
     svc.append_event(session_id, ev_assistant).await.unwrap();
 
     // Load history
-    let msgs = easycopy::ai::session::load_history_async(&db, session_id).await.unwrap();
+    let msgs = easycopy::ai::session::load_history_async(&db, session_id)
+        .await
+        .unwrap();
     assert_eq!(msgs.len(), 2);
     match &msgs[0] {
         easycopy::ai::ChatMessage::User(t) => assert_eq!(t, "hello AI"),
@@ -82,8 +90,3 @@ async fn test_load_history_async() {
         _ => panic!("Expected assistant message"),
     }
 }
-
-
-
-
-

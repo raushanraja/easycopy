@@ -142,15 +142,10 @@ pub fn parse_weather(body: &str) -> std::result::Result<WeatherData, serde_json:
 }
 
 /// The tool handler: geocode the city, fetch weather, return JSON.
-async fn get_weather(
-    _ctx: Arc<dyn ToolContext>,
-    args: Value,
-) -> AdkResult<Value> {
+async fn get_weather(_ctx: Arc<dyn ToolContext>, args: Value) -> AdkResult<Value> {
     let city = args["city"]
         .as_str()
         .ok_or_else(|| AdkError::tool("missing 'city' argument"))?;
-
-    eprintln!("[weather-tool] called with city={city}");
 
     // 1. Geocode
     let geo_resp = reqwest::Client::new()
@@ -180,7 +175,10 @@ async fn get_weather(
         .query(&[
             ("latitude", geo.latitude.to_string().as_str()),
             ("longitude", geo.longitude.to_string().as_str()),
-            ("current", "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m"),
+            (
+                "current",
+                "temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m",
+            ),
         ])
         .send()
         .await
@@ -191,8 +189,8 @@ async fn get_weather(
         .await
         .map_err(|e| AdkError::tool(format!("weather read failed: {e}")))?;
 
-    let data = parse_weather(&w_body)
-        .map_err(|e| AdkError::tool(format!("weather parse failed: {e}")))?;
+    let data =
+        parse_weather(&w_body).map_err(|e| AdkError::tool(format!("weather parse failed: {e}")))?;
 
     let result = WeatherResult {
         city: geo.name,

@@ -57,11 +57,7 @@ async fn run_turn(
     cancel: &Notify,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let agent = build_agent(cfg, vec![crate::ai::tools::weather::build_weather_tool()])?;
-    // FIXME: adk-session 1.0.0 SQLite backend has a duplicate-event-id bug
-    // during tool-call loops (UNIQUE constraint failed on events.id). Using
-    // in-memory sessions until the bug is fixed. Conversation history will
-    // not persist across popup opens.
-    let sessions = crate::ai::session::build_inmemory_session_service();
+    let sessions = build_session_service(db_path).await?;
 
     // Ensure the session exists (idempotent — ignore "already exists" errors).
     let _ = sessions
@@ -77,6 +73,10 @@ async fn run_turn(
         .app_name(APP)
         .agent(agent)
         .session_service(sessions.clone())
+        .run_config(adk_rust::RunConfig {
+            streaming_mode: adk_rust::StreamingMode::None,
+            ..Default::default()
+        })
         .build()?;
 
     let mut stream = runner
@@ -97,15 +97,8 @@ async fn run_turn(
                 let Some(ev) = maybe_ev else { break };
                 match ev {
                     Ok(event) => {
-                        eprintln!("[worker-debug] event: id={}, author={}, is_final={}, content_parts={}",
-                            event.id,
-                            event.author,
-                            event.is_final_response(),
-                            event.content().map(|c| c.parts.len()).unwrap_or(0),
-                        );
                         if let Some(content) = event.content() {
-                            for (i, part) in content.parts.iter().enumerate() {
-                                eprintln!("[worker-debug]   part[{}]: {:?}", i, part);
+                            for part in &content.parts {
                                 if let Some(text) = part.text() {
                                     if !text.is_empty() {
                                         full_response.push_str(text);

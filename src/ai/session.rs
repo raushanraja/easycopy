@@ -107,4 +107,3 @@ pub async fn load_history_async(
     }
     Ok(messages)
 }
-
